@@ -22,7 +22,7 @@ export class Dashboard {
   private maxRecent = 200;
   private dbWrites = 0;
   private writeTimestamps: number[] = [];
-  private readonly WINDOW_MS = 10 * 60 * 1000;
+  private readonly WINDOW_MS = 5 * 60 * 1000;
 
   constructor(private pool: WorkerPool) {}
 

@@ -359,7 +359,7 @@
         <div class="sub">pages / min</div>
       </div>
       <div class="metric-card">
-        <div class="label">DB Writes / 10 min</div>
+        <div class="label">DB Writes / 5 min</div>
         <div class="value amber" id="mWritesWindow">0</div>
         <div class="sub" id="mWritesSub">0 total</div>
       </div>
@@ -410,6 +410,8 @@
   <script>
     let ws;
     let taskCount = 0;
+    const writeLog = []; // client-side fallback: timestamps of successful writes
+    const WINDOW_MS = 5 * 60 * 1000;
 
     function connect() {
       ws = new WebSocket(`ws://${location.host}`);
@@ -434,6 +436,9 @@
         } else if (msg.type === 'stats') {
           updateStats(msg.stats, msg.dbWrites, msg.dbWritesWindow);
         } else if (msg.type === 'task') {
+          if (msg.task && !msg.task.error) {
+            writeLog.push(Date.now());
+          }
           updateStats(msg.stats, msg.dbWrites, msg.dbWritesWindow);
           if (msg.task) addFeedRow(msg.task);
         }
@@ -465,7 +470,11 @@
         processed > 0 ? ((s.failed / processed) * 100).toFixed(1) + '% error rate' : '0%';
       document.getElementById('mFlagged').textContent = (s.flagged ?? 0).toLocaleString();
       document.getElementById('mRate').textContent = s.rateNum?.toFixed(1) ?? '0';
-      document.getElementById('mWritesWindow').textContent = (dbWritesWindow ?? 0).toLocaleString();
+      // Use server-side window count, fall back to client-side tracking
+      const cutoff = Date.now() - WINDOW_MS;
+      while (writeLog.length > 0 && writeLog[0] < cutoff) writeLog.shift();
+      const windowCount = (dbWritesWindow != null && dbWritesWindow > 0) ? dbWritesWindow : writeLog.length;
+      document.getElementById('mWritesWindow').textContent = windowCount.toLocaleString();
       document.getElementById('mWritesSub').textContent = `${(dbWrites ?? 0).toLocaleString()} total`;
       document.getElementById('mWorkers').textContent = s.activeWorkers;
       document.getElementById('mWorkersSub').textContent = `target: ${s.targetWorkers ?? s.activeWorkers} · ${s.queueRemaining?.toLocaleString() ?? 0} in queue`;
