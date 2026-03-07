@@ -21,6 +21,8 @@ export class Dashboard {
   private recentTasks: RecentTask[] = [];
   private maxRecent = 200;
   private dbWrites = 0;
+  private writeTimestamps: number[] = [];
+  private readonly WINDOW_MS = 10 * 60 * 1000;
 
   constructor(private pool: WorkerPool) {}
 
@@ -34,7 +36,7 @@ export class Dashboard {
           type: "init",
           stats: this.pool.getStats(),
           recentTasks: this.recentTasks.slice(-50),
-          dbWrites: this.dbWrites,
+          ...this.getWriteStats(),
         })
       );
 
@@ -48,13 +50,14 @@ export class Dashboard {
 
     this.pool.on("task:complete", (event: TaskEvent) => {
       this.dbWrites++;
+      this.writeTimestamps.push(Date.now());
       this.addRecentTask(event, true);
-      this.broadcast({ type: "task", task: this.recentTasks.at(-1), stats: this.pool.getStats(), dbWrites: this.dbWrites });
+      this.broadcast({ type: "task", task: this.recentTasks.at(-1), stats: this.pool.getStats(), ...this.getWriteStats() });
     });
 
     this.pool.on("task:failed", (event: TaskEvent) => {
       this.addRecentTask(event, false);
-      this.broadcast({ type: "task", task: this.recentTasks.at(-1), stats: this.pool.getStats(), dbWrites: this.dbWrites });
+      this.broadcast({ type: "task", task: this.recentTasks.at(-1), stats: this.pool.getStats(), ...this.getWriteStats() });
     });
 
     this.pool.on("task:flagged", (event: { workerId: number; taskId: string; url: string }) => {
@@ -71,16 +74,16 @@ export class Dashboard {
       if (this.recentTasks.length > this.maxRecent) {
         this.recentTasks = this.recentTasks.slice(-this.maxRecent);
       }
-      this.broadcast({ type: "task", task: flagTask, stats: this.pool.getStats(), dbWrites: this.dbWrites });
+      this.broadcast({ type: "task", task: flagTask, stats: this.pool.getStats(), ...this.getWriteStats() });
     });
 
     this.pool.on("status", () => {
-      this.broadcast({ type: "stats", stats: this.pool.getStats(), dbWrites: this.dbWrites });
+      this.broadcast({ type: "stats", stats: this.pool.getStats(), ...this.getWriteStats() });
     });
 
-    // Periodic stats broadcast (rate calculations update even when no tasks complete)
     setInterval(() => {
-      this.broadcast({ type: "stats", stats: this.pool.getStats(), dbWrites: this.dbWrites });
+      this.pruneTimestamps();
+      this.broadcast({ type: "stats", stats: this.pool.getStats(), ...this.getWriteStats() });
     }, 2000);
 
     this.httpServer.listen(DASHBOARD_PORT, () => {
@@ -145,12 +148,27 @@ export class Dashboard {
 
     if (req.url === "/api/stats") {
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ stats: this.pool.getStats(), dbWrites: this.dbWrites }));
+      res.end(JSON.stringify({ stats: this.pool.getStats(), ...this.getWriteStats() }));
       return;
     }
 
     res.writeHead(404);
     res.end("Not found");
+  }
+
+  private pruneTimestamps(): void {
+    const cutoff = Date.now() - this.WINDOW_MS;
+    while (this.writeTimestamps.length > 0 && this.writeTimestamps[0] < cutoff) {
+      this.writeTimestamps.shift();
+    }
+  }
+
+  private getWriteStats() {
+    this.pruneTimestamps();
+    return {
+      dbWrites: this.dbWrites,
+      dbWritesWindow: this.writeTimestamps.length,
+    };
   }
 
   async shutdown(): Promise<void> {

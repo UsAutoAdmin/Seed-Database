@@ -359,9 +359,9 @@
         <div class="sub">pages / min</div>
       </div>
       <div class="metric-card">
-        <div class="label">DB Writes</div>
-        <div class="value amber" id="mWrites">0</div>
-        <div class="sub" id="mWritesSub">to Supabase</div>
+        <div class="label">DB Writes / 10 min</div>
+        <div class="value amber" id="mWritesWindow">0</div>
+        <div class="sub" id="mWritesSub">0 total</div>
       </div>
       <div class="metric-card">
         <div class="label">Active Workers</div>
@@ -427,14 +427,14 @@
         const msg = JSON.parse(e.data);
 
         if (msg.type === 'init') {
-          updateStats(msg.stats, msg.dbWrites);
+          updateStats(msg.stats, msg.dbWrites, msg.dbWritesWindow);
           if (msg.recentTasks) {
             msg.recentTasks.forEach(t => addFeedRow(t));
           }
         } else if (msg.type === 'stats') {
-          updateStats(msg.stats, msg.dbWrites);
+          updateStats(msg.stats, msg.dbWrites, msg.dbWritesWindow);
         } else if (msg.type === 'task') {
-          updateStats(msg.stats, msg.dbWrites);
+          updateStats(msg.stats, msg.dbWrites, msg.dbWritesWindow);
           if (msg.task) addFeedRow(msg.task);
         }
       };
@@ -454,7 +454,7 @@
       send('setWorkers', next);
     }
 
-    function updateStats(s, dbWrites) {
+    function updateStats(s, dbWrites, dbWritesWindow) {
       const processed = s.completed + s.failed;
       const pct = s.total > 0 ? ((processed / s.total) * 100).toFixed(1) : '0';
 
@@ -465,7 +465,8 @@
         processed > 0 ? ((s.failed / processed) * 100).toFixed(1) + '% error rate' : '0%';
       document.getElementById('mFlagged').textContent = (s.flagged ?? 0).toLocaleString();
       document.getElementById('mRate').textContent = s.rateNum?.toFixed(1) ?? '0';
-      document.getElementById('mWrites').textContent = dbWrites?.toLocaleString() ?? '0';
+      document.getElementById('mWritesWindow').textContent = (dbWritesWindow ?? 0).toLocaleString();
+      document.getElementById('mWritesSub').textContent = `${(dbWrites ?? 0).toLocaleString()} total`;
       document.getElementById('mWorkers').textContent = s.activeWorkers;
       document.getElementById('mWorkersSub').textContent = `target: ${s.targetWorkers ?? s.activeWorkers} · ${s.queueRemaining?.toLocaleString() ?? 0} in queue`;
       document.getElementById('wcValue').textContent = s.targetWorkers ?? s.activeWorkers;
