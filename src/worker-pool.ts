@@ -12,6 +12,7 @@ export interface PoolStats {
   startTime: number;
   status: "idle" | "running" | "paused" | "stopping" | "stopped";
   activeWorkers: number;
+  targetWorkers: number;
   queueRemaining: number;
 }
 
@@ -48,6 +49,9 @@ export class WorkerPool extends EventEmitter {
   private _stopping = false;
   private _pauseResolvers: Array<() => void> = [];
   private _activeWorkers = 0;
+  private _targetWorkers: number;
+  private _runningWorkerPromises: Promise<void>[] = [];
+  private _nextWorkerId = 0;
   private seenUrls = new SeenUrlTracker();
   private stats: PoolStats = {
     total: 0,
@@ -57,11 +61,14 @@ export class WorkerPool extends EventEmitter {
     startTime: Date.now(),
     status: "idle",
     activeWorkers: 0,
+    targetWorkers: 0,
     queueRemaining: 0,
   };
 
   constructor(private config: ScraperConfig) {
     super();
+    this._targetWorkers = config.maxWorkers;
+    this.stats.targetWorkers = config.maxWorkers;
   }
 
   async initialize(): Promise<void> {
@@ -83,18 +90,44 @@ export class WorkerPool extends EventEmitter {
 
     this._stopping = false;
     this._paused = false;
+    this._nextWorkerId = 0;
+    this._runningWorkerPromises = [];
     this.stats.status = "running";
     this.stats.startTime = Date.now();
     this.emit("status", this.getStats());
 
-    const workers = Array.from({ length: this.config.maxWorkers }, (_, i) =>
-      this.runWorker(i)
-    );
+    for (let i = 0; i < this._targetWorkers; i++) {
+      this._spawnWorker();
+    }
 
-    await Promise.all(workers);
+    await Promise.all(this._runningWorkerPromises);
     if (!this._stopping) this.stats.status = "idle";
     this.emit("status", this.getStats());
     return this.getStats();
+  }
+
+  setWorkers(count: number): void {
+    const clamped = Math.max(1, Math.min(count, 24));
+    const previous = this._targetWorkers;
+    this._targetWorkers = clamped;
+    this.stats.targetWorkers = clamped;
+    console.log(`Workers: ${previous} → ${clamped}`);
+
+    // If scaling up mid-run, spawn additional workers immediately
+    if (this.stats.status === "running" && clamped > this._activeWorkers) {
+      const toSpawn = clamped - this._activeWorkers;
+      for (let i = 0; i < toSpawn; i++) {
+        this._spawnWorker();
+      }
+    }
+
+    this.emit("status", this.getStats());
+  }
+
+  private _spawnWorker(): void {
+    const id = this._nextWorkerId++;
+    const promise = this.runWorker(id);
+    this._runningWorkerPromises.push(promise);
   }
 
   pause(): void {
@@ -147,6 +180,9 @@ export class WorkerPool extends EventEmitter {
 
     try {
       while (!this._stopping) {
+        // Scale down: if more workers active than target, this one exits
+        if (this._activeWorkers > this._targetWorkers) break;
+
         await this.waitIfPaused();
         if (this._stopping) break;
 

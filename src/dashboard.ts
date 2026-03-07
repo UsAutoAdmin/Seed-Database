@@ -103,7 +103,7 @@ export class Dashboard {
     }
   }
 
-  private handleCommand(msg: { action: string }): void {
+  private handleCommand(msg: { action: string; value?: number }): void {
     switch (msg.action) {
       case "pause":
         this.pool.pause();
@@ -113,6 +113,11 @@ export class Dashboard {
         break;
       case "stop":
         this.pool.stop();
+        break;
+      case "setWorkers":
+        if (typeof msg.value === "number") {
+          this.pool.setWorkers(msg.value);
+        }
         break;
     }
   }

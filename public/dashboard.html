@@ -102,6 +102,52 @@
     .controls button.danger { border-color: rgba(239,68,68,0.4); }
     .controls button.danger:hover { background: rgba(239,68,68,0.1); border-color: var(--red); }
 
+    .worker-control {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 6px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+
+    .worker-control label {
+      font-size: 12px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+
+    .worker-control button {
+      width: 28px;
+      height: 28px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface2);
+      color: var(--text);
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+      padding: 0;
+    }
+
+    .worker-control button:hover { border-color: var(--accent); background: rgba(99,102,241,0.15); }
+
+    .worker-control .wc-value {
+      font-size: 18px;
+      font-weight: 700;
+      min-width: 28px;
+      text-align: center;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+    }
+
     main { padding: 24px 32px; }
 
     .metrics {
@@ -278,6 +324,12 @@
       </span>
     </h1>
     <div class="controls">
+      <div class="worker-control">
+        <label>Workers</label>
+        <button onclick="adjustWorkers(-1)">-</button>
+        <span class="wc-value" id="wcValue">4</span>
+        <button onclick="adjustWorkers(1)">+</button>
+      </div>
       <button id="btnPause" onclick="send('pause')">Pause</button>
       <button id="btnResume" onclick="send('resume')" disabled>Resume</button>
       <button id="btnStop" class="danger" onclick="send('stop')">Stop</button>
@@ -388,10 +440,18 @@
       };
     }
 
-    function send(action) {
+    function send(action, value) {
       if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ action }));
+        ws.send(JSON.stringify({ action, value }));
       }
+    }
+
+    function adjustWorkers(delta) {
+      const el = document.getElementById('wcValue');
+      const current = parseInt(el.textContent, 10) || 4;
+      const next = Math.max(1, Math.min(current + delta, 24));
+      el.textContent = next;
+      send('setWorkers', next);
     }
 
     function updateStats(s, dbWrites) {
@@ -407,7 +467,8 @@
       document.getElementById('mRate').textContent = s.rateNum?.toFixed(1) ?? '0';
       document.getElementById('mWrites').textContent = dbWrites?.toLocaleString() ?? '0';
       document.getElementById('mWorkers').textContent = s.activeWorkers;
-      document.getElementById('mWorkersSub').textContent = `${s.queueRemaining?.toLocaleString() ?? 0} in queue`;
+      document.getElementById('mWorkersSub').textContent = `target: ${s.targetWorkers ?? s.activeWorkers} · ${s.queueRemaining?.toLocaleString() ?? 0} in queue`;
+      document.getElementById('wcValue').textContent = s.targetWorkers ?? s.activeWorkers;
       document.getElementById('mElapsed').textContent = s.elapsed;
 
       document.getElementById('progLabel').textContent =
