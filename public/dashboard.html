@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Phantom Scraper — Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #232732;
+      --border: #2e3344;
+      --text: #e4e6ef;
+      --text-dim: #8b8fa3;
+      --accent: #6366f1;
+      --green: #22c55e;
+      --red: #ef4444;
+      --amber: #f59e0b;
+      --cyan: #06b6d4;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 32px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    header h1 {
+      font-size: 20px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    header h1 span.icon { font-size: 24px; }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .status-badge .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .status-badge.running { background: rgba(34,197,94,0.15); color: var(--green); }
+    .status-badge.running .dot { background: var(--green); animation: pulse 1.5s infinite; }
+    .status-badge.paused { background: rgba(245,158,11,0.15); color: var(--amber); }
+    .status-badge.paused .dot { background: var(--amber); }
+    .status-badge.idle { background: rgba(139,143,163,0.15); color: var(--text-dim); }
+    .status-badge.idle .dot { background: var(--text-dim); }
+    .status-badge.stopped { background: rgba(239,68,68,0.15); color: var(--red); }
+    .status-badge.stopped .dot { background: var(--red); }
+    .status-badge.stopping { background: rgba(239,68,68,0.15); color: var(--red); }
+    .status-badge.stopping .dot { background: var(--red); animation: pulse 0.8s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .controls {
+      display: flex;
+      gap: 8px;
+    }
+
+    .controls button {
+      padding: 8px 20px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .controls button:hover { background: var(--surface2); border-color: var(--accent); }
+    .controls button:disabled { opacity: 0.3; cursor: not-allowed; }
+    .controls button.danger { border-color: rgba(239,68,68,0.4); }
+    .controls button.danger:hover { background: rgba(239,68,68,0.1); border-color: var(--red); }
+
+    main { padding: 24px 32px; }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+
+    .metric-card .label {
+      font-size: 12px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    .metric-card .value {
+      font-size: 28px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .metric-card .sub {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-top: 4px;
+    }
+
+    .metric-card .value.green { color: var(--green); }
+    .metric-card .value.red { color: var(--red); }
+    .metric-card .value.cyan { color: var(--cyan); }
+    .metric-card .value.amber { color: var(--amber); }
+
+    .progress-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 28px;
+    }
+
+    .progress-bar-container {
+      width: 100%;
+      height: 8px;
+      background: var(--surface2);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 12px;
+    }
+
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--cyan));
+      border-radius: 4px;
+      transition: width 0.5s ease;
+    }
+
+    .progress-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      color: var(--text-dim);
+    }
+
+    .feed-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .feed-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .feed-header h2 {
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .feed-header .count {
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .feed-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .feed-table th {
+      text-align: left;
+      padding: 10px 16px;
+      color: var(--text-dim);
+      font-weight: 500;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface2);
+      position: sticky;
+      top: 0;
+    }
+
+    .feed-table td {
+      padding: 8px 16px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 300px;
+    }
+
+    .feed-table tr.success td:nth-child(4) { color: var(--green); }
+    .feed-table tr.error td:nth-child(4) { color: var(--red); }
+
+    .feed-scroll {
+      max-height: 420px;
+      overflow-y: auto;
+    }
+
+    .feed-scroll::-webkit-scrollbar { width: 6px; }
+    .feed-scroll::-webkit-scrollbar-track { background: transparent; }
+    .feed-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .worker-tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: rgba(99,102,241,0.15);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .connection-lost {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      padding: 10px 16px;
+      background: rgba(239,68,68,0.9);
+      color: white;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      display: none;
+      z-index: 100;
+    }
+  </style>
+</head>
+<body>
+  <div class="connection-lost" id="connLost">Connection lost — reconnecting...</div>
+
+  <header>
+    <h1>
+      <span class="icon">&#9889;</span>
+      Phantom Scraper
+      <span class="status-badge idle" id="statusBadge">
+        <span class="dot"></span>
+        <span id="statusText">idle</span>
+      </span>
+    </h1>
+    <div class="controls">
+      <button id="btnPause" onclick="send('pause')">Pause</button>
+      <button id="btnResume" onclick="send('resume')" disabled>Resume</button>
+      <button id="btnStop" class="danger" onclick="send('stop')">Stop</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="metrics">
+      <div class="metric-card">
+        <div class="label">Completed</div>
+        <div class="value green" id="mCompleted">0</div>
+        <div class="sub" id="mCompletedSub">—</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">Failed</div>
+        <div class="value red" id="mFailed">0</div>
+        <div class="sub" id="mFailedRate">0%</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">Flagged</div>
+        <div class="value amber" id="mFlagged">0</div>
+        <div class="sub">duplicates skipped</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">Rate</div>
+        <div class="value cyan" id="mRate">0</div>
+        <div class="sub">pages / min</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">DB Writes</div>
+        <div class="value amber" id="mWrites">0</div>
+        <div class="sub" id="mWritesSub">to Supabase</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">Active Workers</div>
+        <div class="value" id="mWorkers">0</div>
+        <div class="sub" id="mWorkersSub">—</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">Elapsed</div>
+        <div class="value" id="mElapsed">0s</div>
+        <div class="sub" id="mElapsedSub">—</div>
+      </div>
+    </div>
+
+    <div class="progress-section">
+      <div class="progress-labels">
+        <span id="progLabel">0 / 0 tasks</span>
+        <span id="progPct">0%</span>
+      </div>
+      <div class="progress-bar-container">
+        <div class="progress-bar" id="progBar" style="width: 0%"></div>
+      </div>
+    </div>
+
+    <div class="feed-section">
+      <div class="feed-header">
+        <h2>Live Feed</h2>
+        <span class="count" id="feedCount">0 tasks</span>
+      </div>
+      <div class="feed-scroll" id="feedScroll">
+        <table class="feed-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Worker</th>
+              <th>Query</th>
+              <th>Sold Count</th>
+              <th>Duration</th>
+            </tr>
+          </thead>
+          <tbody id="feedBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    let ws;
+    let taskCount = 0;
+
+    function connect() {
+      ws = new WebSocket(`ws://${location.host}`);
+
+      ws.onopen = () => {
+        document.getElementById('connLost').style.display = 'none';
+      };
+
+      ws.onclose = () => {
+        document.getElementById('connLost').style.display = 'block';
+        setTimeout(connect, 2000);
+      };
+
+      ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+
+        if (msg.type === 'init') {
+          updateStats(msg.stats, msg.dbWrites);
+          if (msg.recentTasks) {
+            msg.recentTasks.forEach(t => addFeedRow(t));
+          }
+        } else if (msg.type === 'stats') {
+          updateStats(msg.stats, msg.dbWrites);
+        } else if (msg.type === 'task') {
+          updateStats(msg.stats, msg.dbWrites);
+          if (msg.task) addFeedRow(msg.task);
+        }
+      };
+    }
+
+    function send(action) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ action }));
+      }
+    }
+
+    function updateStats(s, dbWrites) {
+      const processed = s.completed + s.failed;
+      const pct = s.total > 0 ? ((processed / s.total) * 100).toFixed(1) : '0';
+
+      document.getElementById('mCompleted').textContent = s.completed.toLocaleString();
+      document.getElementById('mCompletedSub').textContent = `of ${s.total.toLocaleString()} total`;
+      document.getElementById('mFailed').textContent = s.failed.toLocaleString();
+      document.getElementById('mFailedRate').textContent =
+        processed > 0 ? ((s.failed / processed) * 100).toFixed(1) + '% error rate' : '0%';
+      document.getElementById('mFlagged').textContent = (s.flagged ?? 0).toLocaleString();
+      document.getElementById('mRate').textContent = s.rateNum?.toFixed(1) ?? '0';
+      document.getElementById('mWrites').textContent = dbWrites?.toLocaleString() ?? '0';
+      document.getElementById('mWorkers').textContent = s.activeWorkers;
+      document.getElementById('mWorkersSub').textContent = `${s.queueRemaining?.toLocaleString() ?? 0} in queue`;
+      document.getElementById('mElapsed').textContent = s.elapsed;
+
+      document.getElementById('progLabel').textContent =
+        `${processed.toLocaleString()} / ${s.total.toLocaleString()} tasks`;
+      document.getElementById('progPct').textContent = pct + '%';
+      document.getElementById('progBar').style.width = pct + '%';
+
+      // Status badge
+      const badge = document.getElementById('statusBadge');
+      const text = document.getElementById('statusText');
+      badge.className = 'status-badge ' + s.status;
+      text.textContent = s.status;
+
+      // Button states
+      const isRunning = s.status === 'running';
+      const isPaused = s.status === 'paused';
+      document.getElementById('btnPause').disabled = !isRunning;
+      document.getElementById('btnResume').disabled = !isPaused;
+      document.getElementById('btnStop').disabled = s.status === 'stopped' || s.status === 'idle';
+    }
+
+    function addFeedRow(task) {
+      taskCount++;
+      document.getElementById('feedCount').textContent = taskCount + ' tasks';
+
+      const tbody = document.getElementById('feedBody');
+      const tr = document.createElement('tr');
+      tr.className = task.error ? 'error' : 'success';
+
+      tr.innerHTML = `
+        <td>${task.time}</td>
+        <td><span class="worker-tag">W${task.workerId}</span></td>
+        <td title="${esc(task.query)}">${esc(task.query)}</td>
+        <td>${task.error ? esc(task.error).substring(0, 40) : task.count?.toLocaleString()}</td>
+        <td>${(task.durationMs / 1000).toFixed(1)}s</td>
+      `;
+
+      tbody.insertBefore(tr, tbody.firstChild);
+
+      // Keep max 200 rows
+      while (tbody.children.length > 200) {
+        tbody.removeChild(tbody.lastChild);
+      }
+    }
+
+    function esc(s) {
+      const d = document.createElement('div');
+      d.textContent = s ?? '';
+      return d.innerHTML;
+    }
+
+    connect();
+  </script>
+</body>
+</html>
