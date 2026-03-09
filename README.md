@@ -1,100 +1,175 @@
-# Phantom Local Boost — eBay Sold Scraper
+# Phantom Scraper — Dual eBay Sold & Active Count Engine
 
-High-performance local web scraper that extracts sold listing counts from eBay search results pages and writes them to Supabase. Uses parallel headless Chromium workers via Playwright.
+A high-performance local web scraping engine that extracts sold and active listing counts from eBay search pages using parallel headless Chromium workers. Designed to replace cloud-based scraping services like Octoparse.
 
-## Setup
+## Features
 
-```bash
-npm install
-npx playwright install chromium
-```
-
-Copy `.env.example` to `.env.local` and fill in your Supabase credentials:
-
-```bash
-cp .env.example .env.local
-```
-
-### Database Setup
-
-Run the SQL migration in your Supabase SQL Editor to create the queue table and functions:
-
-```bash
-# File: 20260307_create_fetch_pending_sold_scrapes.sql
-```
-
-Then populate the scrape queue:
-
-```sql
-SELECT populate_sold_scrape_queue();
-```
-
-## Usage
-
-```bash
-# Default (4 workers, 500 per batch)
-npm start
-
-# Custom workers and batch size
-npx tsx src/index.ts --workers 8 --batch-size 1000
-
-# Dry run (no DB writes)
-npm run start:dry
-
-# Headed mode (visible browser)
-npx tsx src/index.ts --headed --workers 1
-```
-
-### CLI Options
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--workers N` | 4 | Number of parallel browser contexts |
-| `--batch-size N` | 500 | Rows fetched per batch from Supabase |
-| `--timeout N` | 30000 | Page load timeout in ms |
-| `--retries N` | 3 | Max retries per failed page |
-| `--headed` | false | Show the browser window |
-| `--dry-run` | false | Skip all DB writes |
-
-## Dashboard
-
-A live monitoring dashboard starts automatically at **http://localhost:3847** with:
-
-- Real-time metrics: completed, failed, flagged duplicates, rate (pages/min)
-- Progress bar
-- Pause / Resume / Stop controls
-- Live feed of every scraped page
+- **Dual Scraper System** — Sold scraper and Active scraper run independently with separate controls
+- **Real-time Dashboard** — Live monitoring at `http://localhost:3847` with per-scraper metrics, worker controls, and task feeds
+- **Parallel Workers** — Configurable worker count with dynamic scaling via the dashboard
+- **Claim-based Batching** — Sold scraper uses `FOR UPDATE SKIP LOCKED` so multiple machines can scrape without overlapping
+- **Anti-detection** — User agent rotation, randomized delays, retry with exponential backoff
+- **Duplicate Detection** — Cross-batch URL tracking, broken URL flagging, unique constraint on `original_url`
 
 ## Architecture
 
 ```
-src/
-├── index.ts          Main orchestrator — batch loop
-├── config.ts         CLI args + env config
-├── db.ts             Supabase reads/writes + duplicate detection
-├── scraper.ts        eBay page extraction (span.BOLD selector)
-├── worker-pool.ts    Parallel browser contexts with pause/stop
-└── dashboard.ts      HTTP + WebSocket monitoring server
-
-public/
-└── dashboard.html    Live monitoring UI
+Table 8 (8_Research_Assistant)          Table 9 (9_Octoparse_Scrapes)
+┌──────────────────────────┐            ┌──────────────────────────────┐
+│  id, link                │            │  id, original_url, active,   │
+│  (active eBay search URL)│            │  sold, sold_link,            │
+│                          │            │  sold_scraped, scraped_at    │
+└───────────┬──────────────┘            └──────────┬───────────────────┘
+            │                                      │
+    Active Scraper                          Sold Scraper
+    ─────────────                           ────────────
+    1. Fetch from table 8                   1. Claim batch from table 9
+       WHERE NOT EXISTS in table 9             (sold_scraped: NULL → 'pending')
+    2. Visit link, extract active count     2. Visit sold_link, extract sold count
+    3. INSERT into table 9                  3. UPDATE table 9
+       (with generated sold_link               (sold = count,
+        if active > 0)                          sold_scraped = 'true')
 ```
 
-### Duplicate Protection
+## Prerequisites
 
-Three layers prevent wasted scrapes on bad data:
+- **Node.js** v20+
+- **npm**
+- Access to the Supabase project (URL + service role key)
 
-1. **Within-batch** — deduplicates by `sold_link` before dispatching
-2. **Cross-batch** — `SeenUrlTracker` compares `_nkw` search queries across all batches
-3. **Broken URL detection** — flags malformed URLs (e.g. unescaped `&` in model names like "TOWN & COUNTRY")
+## Setup on a New Machine
 
-All flagged rows get `flag_for_review = true` in `9_Octoparse_Scrapes`.
+### 1. Clone the repository
 
-## Performance
+```bash
+git clone https://github.com/UsAutoAdmin/Seed-Database.git
+cd Seed-Database
+```
 
-| Workers | Expected Throughput |
-|---------|-------------------|
-| 1 | 15–25 pages/min |
-| 2 | 30–50 pages/min |
-| 4 | 60–100 pages/min |
-| 8 | 100–180 pages/min |
+### 2. Install dependencies
+
+```bash
+npm install
+```
+
+### 3. Install Playwright browsers
+
+```bash
+npx playwright install chromium
+```
+
+### 4. Create environment file
+
+Create a `.env.local` file in the project root with your Supabase credentials:
+
+```bash
+# .env.local
+NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6...
+```
+
+> **Where to find these:**
+> - `NEXT_PUBLIC_SUPABASE_URL` — Supabase Dashboard → Settings → API → Project URL
+> - `SUPABASE_SERVICE_ROLE_KEY` — Supabase Dashboard → Settings → API → `service_role` key (secret)
+
+### 5. Build
+
+```bash
+npm run build
+```
+
+### 6. Run
+
+```bash
+npm start
+```
+
+Open `http://localhost:3847` in your browser. Press **Start** on either scraper card to begin.
+
+## CLI Options
+
+```bash
+node dist/index.js [options]
+
+Options:
+  --workers <n>       Number of parallel workers (default: 4)
+  --batch-size <n>    Tasks per batch (default: 500)
+  --timeout <ms>      Page load timeout in ms (default: 30000)
+  --retries <n>       Max retries per task (default: 3)
+  --headed            Show browser windows (default: headless)
+  --dry-run           Scrape pages but don't write to Supabase
+```
+
+### Examples
+
+```bash
+# Run with 8 workers
+node dist/index.js --workers 8
+
+# Dry run to test without writing
+node dist/index.js --dry-run --headed
+
+# High-throughput on dedicated machine
+node dist/index.js --workers 12
+```
+
+## Dashboard Controls
+
+Each scraper card has independent controls:
+
+| Button  | Action                                    |
+|---------|-------------------------------------------|
+| Start   | Begin scraping (enabled when idle/stopped)|
+| Pause   | Pause all workers (resume to continue)    |
+| Resume  | Resume paused workers                     |
+| Stop    | Stop after current tasks complete         |
+| +/-     | Scale workers up/down while running       |
+
+## Recommended Worker Counts
+
+| Machine                    | Workers | Est. Pages/Min |
+|----------------------------|---------|----------------|
+| MacBook (shared workload)  | 2-4     | ~35-70         |
+| M4 Mac Mini 16GB (dedicated)| 10-12  | ~175-210       |
+| Two M4 Mac Minis           | 12 each | ~400           |
+
+> Beyond ~12-16 workers per IP, eBay's anti-bot detection becomes the bottleneck, not hardware.
+
+## Running on Multiple Machines
+
+The sold scraper uses claim-based batching (`FOR UPDATE SKIP LOCKED`), so you can run it on multiple machines simultaneously without overlap. Each machine claims its own batch atomically.
+
+The active scraper uses `NOT EXISTS` checks plus a unique constraint on `original_url` to prevent duplicate work. Running on two machines may cause minor redundant page visits but no duplicate database entries.
+
+## Database Requirements
+
+The following Supabase tables and functions must exist:
+
+### Tables
+- `8_Research_Assistant` — Source table with `link` (active eBay search URLs)
+- `9_Octoparse_Scrapes` — Results table with `original_url`, `active`, `sold`, `sold_link`, `sold_scraped`
+
+### RPC Functions
+- `fetch_pending_active_scrapes(batch_size)` — Returns rows from table 8 not yet in table 9
+- `claim_sold_scrape_batch(batch_size)` — Atomically claims and returns sold tasks from table 9
+
+### Indexes
+- `idx_octoparse_original_url` — Unique index on `9_Octoparse_Scrapes.original_url`
+- `idx_octoparse_sold_unscraped` — Partial index for fast sold batch claiming
+
+## File Structure
+
+```
+├── src/
+│   ├── index.ts          # Entry point, dual scrape loop orchestration
+│   ├── config.ts         # CLI args, Supabase credentials, interfaces
+│   ├── db.ts             # All Supabase reads/writes for both scrapers
+│   ├── worker-pool.ts    # Parallel Playwright workers, task processing
+│   ├── scraper.ts        # eBay page navigation and count extraction
+│   └── dashboard.ts      # HTTP + WebSocket server for the dashboard
+├── public/
+│   └── dashboard.html    # Dashboard UI (metrics, controls, live feed)
+├── package.json
+├── tsconfig.json
+└── .env.local            # (create this — not committed)
+```

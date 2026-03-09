@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { readFileSync } from "fs";
 import { resolve } from "path";
-import type { WorkerPool, TaskEvent, PoolStats } from "./worker-pool.js";
+import type { WorkerPool, TaskEvent, PoolStats, ScraperMode } from "./worker-pool.js";
 
 const DASHBOARD_PORT = 3847;
 
@@ -13,18 +13,47 @@ interface RecentTask {
   count: number | null;
   error?: string;
   durationMs: number;
+  mode: ScraperMode;
+}
+
+interface PoolState {
+  pool: WorkerPool;
+  onStart: (() => void) | null;
+  recentTasks: RecentTask[];
+  dbWrites: number;
+  writeTimestamps: number[];
 }
 
 export class Dashboard {
   private wss: WebSocketServer | null = null;
   private httpServer: ReturnType<typeof createServer> | null = null;
-  private recentTasks: RecentTask[] = [];
   private maxRecent = 200;
-  private dbWrites = 0;
-  private writeTimestamps: number[] = [];
   private readonly WINDOW_MS = 5 * 60 * 1000;
+  private pools: Record<ScraperMode, PoolState>;
 
-  constructor(private pool: WorkerPool) {}
+  constructor(
+    soldPool: WorkerPool,
+    activePool: WorkerPool,
+    onStartSold?: () => void,
+    onStartActive?: () => void
+  ) {
+    this.pools = {
+      sold: {
+        pool: soldPool,
+        onStart: onStartSold ?? null,
+        recentTasks: [],
+        dbWrites: 0,
+        writeTimestamps: [],
+      },
+      active: {
+        pool: activePool,
+        onStart: onStartActive ?? null,
+        recentTasks: [],
+        dbWrites: 0,
+        writeTimestamps: [],
+      },
+    };
+  }
 
   start(): void {
     this.httpServer = createServer((req, res) => this.handleHttp(req, res));
@@ -34,9 +63,8 @@ export class Dashboard {
       ws.send(
         JSON.stringify({
           type: "init",
-          stats: this.pool.getStats(),
-          recentTasks: this.recentTasks.slice(-50),
-          ...this.getWriteStats(),
+          sold: this.getPoolSnapshot("sold"),
+          active: this.getPoolSnapshot("active"),
         })
       );
 
@@ -48,42 +76,55 @@ export class Dashboard {
       });
     });
 
-    this.pool.on("task:complete", (event: TaskEvent) => {
-      this.dbWrites++;
-      this.writeTimestamps.push(Date.now());
-      this.addRecentTask(event, true);
-      this.broadcast({ type: "task", task: this.recentTasks.at(-1), stats: this.pool.getStats(), ...this.getWriteStats() });
-    });
+    for (const mode of ["sold", "active"] as ScraperMode[]) {
+      const state = this.pools[mode];
 
-    this.pool.on("task:failed", (event: TaskEvent) => {
-      this.addRecentTask(event, false);
-      this.broadcast({ type: "task", task: this.recentTasks.at(-1), stats: this.pool.getStats(), ...this.getWriteStats() });
-    });
+      state.pool.on("task:complete", (event: TaskEvent) => {
+        state.dbWrites++;
+        state.writeTimestamps.push(Date.now());
+        this.addRecentTask(mode, event, true);
+        this.broadcastPoolUpdate(mode);
+      });
 
-    this.pool.on("task:flagged", (event: { workerId: number; taskId: string; url: string }) => {
-      const query = extractQuery(event.url);
-      const flagTask: RecentTask = {
-        time: new Date().toLocaleTimeString(),
-        workerId: event.workerId,
-        query,
-        count: null,
-        error: "DUPLICATE — flagged for review",
-        durationMs: 0,
-      };
-      this.recentTasks.push(flagTask);
-      if (this.recentTasks.length > this.maxRecent) {
-        this.recentTasks = this.recentTasks.slice(-this.maxRecent);
-      }
-      this.broadcast({ type: "task", task: flagTask, stats: this.pool.getStats(), ...this.getWriteStats() });
-    });
+      state.pool.on("task:failed", (event: TaskEvent) => {
+        this.addRecentTask(mode, event, false);
+        this.broadcastPoolUpdate(mode);
+      });
 
-    this.pool.on("status", () => {
-      this.broadcast({ type: "stats", stats: this.pool.getStats(), ...this.getWriteStats() });
-    });
+      state.pool.on("task:flagged", (event: { workerId: number; taskId: string; url: string }) => {
+        const query = extractQuery(event.url);
+        const flagTask: RecentTask = {
+          time: new Date().toLocaleTimeString(),
+          workerId: event.workerId,
+          query,
+          count: null,
+          error: "DUPLICATE — flagged",
+          durationMs: 0,
+          mode,
+        };
+        state.recentTasks.push(flagTask);
+        if (state.recentTasks.length > this.maxRecent) {
+          state.recentTasks = state.recentTasks.slice(-this.maxRecent);
+        }
+        this.broadcastPoolUpdate(mode);
+      });
+
+      state.pool.on("status", () => {
+        this.broadcast({
+          type: "stats",
+          [mode]: { stats: state.pool.getStats(), dbWrites: state.dbWrites, dbWritesWindow: state.writeTimestamps.length },
+        });
+      });
+    }
 
     setInterval(() => {
-      this.pruneTimestamps();
-      this.broadcast({ type: "stats", stats: this.pool.getStats(), ...this.getWriteStats() });
+      this.pruneTimestamps("sold");
+      this.pruneTimestamps("active");
+      this.broadcast({
+        type: "stats",
+        sold: this.getPoolSnapshot("sold"),
+        active: this.getPoolSnapshot("active"),
+      });
     }, 2000);
 
     this.httpServer.listen(DASHBOARD_PORT, () => {
@@ -91,38 +132,74 @@ export class Dashboard {
     });
   }
 
-  private addRecentTask(event: TaskEvent, success: boolean): void {
+  private addRecentTask(mode: ScraperMode, event: TaskEvent, success: boolean): void {
+    const state = this.pools[mode];
     const query = extractQuery(event.url);
-    this.recentTasks.push({
+    state.recentTasks.push({
       time: new Date().toLocaleTimeString(),
       workerId: event.workerId,
       query,
       count: event.count,
       error: success ? undefined : event.error,
       durationMs: event.durationMs,
+      mode,
     });
-    if (this.recentTasks.length > this.maxRecent) {
-      this.recentTasks = this.recentTasks.slice(-this.maxRecent);
+    if (state.recentTasks.length > this.maxRecent) {
+      state.recentTasks = state.recentTasks.slice(-this.maxRecent);
     }
   }
 
-  private handleCommand(msg: { action: string; value?: number }): void {
+  private handleCommand(msg: { action: string; mode?: ScraperMode; value?: number }): void {
+    const mode = msg.mode ?? "sold";
+    const state = this.pools[mode];
+    if (!state) return;
+
     switch (msg.action) {
       case "pause":
-        this.pool.pause();
+        state.pool.pause();
         break;
       case "resume":
-        this.pool.resume();
+        state.pool.resume();
         break;
       case "stop":
-        this.pool.stop();
+        state.pool.stop();
         break;
       case "setWorkers":
         if (typeof msg.value === "number") {
-          this.pool.setWorkers(msg.value);
+          state.pool.setWorkers(msg.value);
+        }
+        break;
+      case "start":
+        if (state.onStart) {
+          state.pool.reset();
+          state.dbWrites = 0;
+          state.writeTimestamps = [];
+          state.recentTasks = [];
+          this.broadcast({ type: "clear", mode });
+          state.onStart();
         }
         break;
     }
+  }
+
+  private broadcastPoolUpdate(mode: ScraperMode): void {
+    this.broadcast({
+      type: "poolUpdate",
+      mode,
+      ...this.getPoolSnapshot(mode),
+      task: this.pools[mode].recentTasks.at(-1),
+    });
+  }
+
+  private getPoolSnapshot(mode: ScraperMode) {
+    const state = this.pools[mode];
+    this.pruneTimestamps(mode);
+    return {
+      stats: state.pool.getStats(),
+      dbWrites: state.dbWrites,
+      dbWritesWindow: state.writeTimestamps.length,
+      recentTasks: state.recentTasks.slice(-50),
+    };
   }
 
   private broadcast(data: unknown): void {
@@ -141,14 +218,8 @@ export class Dashboard {
         resolve(import.meta.dirname, "../public/dashboard.html"),
         "utf-8"
       );
-      res.writeHead(200, { "Content-Type": "text/html" });
+      res.writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-cache" });
       res.end(html);
-      return;
-    }
-
-    if (req.url === "/api/stats") {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ stats: this.pool.getStats(), ...this.getWriteStats() }));
       return;
     }
 
@@ -156,19 +227,12 @@ export class Dashboard {
     res.end("Not found");
   }
 
-  private pruneTimestamps(): void {
+  private pruneTimestamps(mode: ScraperMode): void {
+    const state = this.pools[mode];
     const cutoff = Date.now() - this.WINDOW_MS;
-    while (this.writeTimestamps.length > 0 && this.writeTimestamps[0] < cutoff) {
-      this.writeTimestamps.shift();
+    while (state.writeTimestamps.length > 0 && state.writeTimestamps[0] < cutoff) {
+      state.writeTimestamps.shift();
     }
-  }
-
-  private getWriteStats() {
-    this.pruneTimestamps();
-    return {
-      dbWrites: this.dbWrites,
-      dbWritesWindow: this.writeTimestamps.length,
-    };
   }
 
   async shutdown(): Promise<void> {

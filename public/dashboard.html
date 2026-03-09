@@ -46,256 +46,6 @@
 
     header h1 span.icon { font-size: 24px; }
 
-    .status-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 12px;
-      border-radius: 20px;
-      font-size: 12px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .status-badge .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-    }
-
-    .status-badge.running { background: rgba(34,197,94,0.15); color: var(--green); }
-    .status-badge.running .dot { background: var(--green); animation: pulse 1.5s infinite; }
-    .status-badge.paused { background: rgba(245,158,11,0.15); color: var(--amber); }
-    .status-badge.paused .dot { background: var(--amber); }
-    .status-badge.idle { background: rgba(139,143,163,0.15); color: var(--text-dim); }
-    .status-badge.idle .dot { background: var(--text-dim); }
-    .status-badge.stopped { background: rgba(239,68,68,0.15); color: var(--red); }
-    .status-badge.stopped .dot { background: var(--red); }
-    .status-badge.stopping { background: rgba(239,68,68,0.15); color: var(--red); }
-    .status-badge.stopping .dot { background: var(--red); animation: pulse 0.8s infinite; }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.3; }
-    }
-
-    .controls {
-      display: flex;
-      gap: 8px;
-    }
-
-    .controls button {
-      padding: 8px 20px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--surface);
-      color: var(--text);
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.15s;
-    }
-
-    .controls button:hover { background: var(--surface2); border-color: var(--accent); }
-    .controls button:disabled { opacity: 0.3; cursor: not-allowed; }
-    .controls button.danger { border-color: rgba(239,68,68,0.4); }
-    .controls button.danger:hover { background: rgba(239,68,68,0.1); border-color: var(--red); }
-
-    .worker-control {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 4px 6px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-    }
-
-    .worker-control label {
-      font-size: 12px;
-      color: var(--text-dim);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      white-space: nowrap;
-    }
-
-    .worker-control button {
-      width: 28px;
-      height: 28px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: var(--surface2);
-      color: var(--text);
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.15s;
-      padding: 0;
-    }
-
-    .worker-control button:hover { border-color: var(--accent); background: rgba(99,102,241,0.15); }
-
-    .worker-control .wc-value {
-      font-size: 18px;
-      font-weight: 700;
-      min-width: 28px;
-      text-align: center;
-      color: var(--accent);
-      font-variant-numeric: tabular-nums;
-    }
-
-    main { padding: 24px 32px; }
-
-    .metrics {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 16px;
-      margin-bottom: 28px;
-    }
-
-    .metric-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 20px;
-    }
-
-    .metric-card .label {
-      font-size: 12px;
-      color: var(--text-dim);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 8px;
-    }
-
-    .metric-card .value {
-      font-size: 28px;
-      font-weight: 700;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .metric-card .sub {
-      font-size: 12px;
-      color: var(--text-dim);
-      margin-top: 4px;
-    }
-
-    .metric-card .value.green { color: var(--green); }
-    .metric-card .value.red { color: var(--red); }
-    .metric-card .value.cyan { color: var(--cyan); }
-    .metric-card .value.amber { color: var(--amber); }
-
-    .progress-section {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 20px;
-      margin-bottom: 28px;
-    }
-
-    .progress-bar-container {
-      width: 100%;
-      height: 8px;
-      background: var(--surface2);
-      border-radius: 4px;
-      overflow: hidden;
-      margin-top: 12px;
-    }
-
-    .progress-bar {
-      height: 100%;
-      background: linear-gradient(90deg, var(--accent), var(--cyan));
-      border-radius: 4px;
-      transition: width 0.5s ease;
-    }
-
-    .progress-labels {
-      display: flex;
-      justify-content: space-between;
-      font-size: 13px;
-      color: var(--text-dim);
-    }
-
-    .feed-section {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      overflow: hidden;
-    }
-
-    .feed-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .feed-header h2 {
-      font-size: 15px;
-      font-weight: 600;
-    }
-
-    .feed-header .count {
-      font-size: 12px;
-      color: var(--text-dim);
-    }
-
-    .feed-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-    }
-
-    .feed-table th {
-      text-align: left;
-      padding: 10px 16px;
-      color: var(--text-dim);
-      font-weight: 500;
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface2);
-      position: sticky;
-      top: 0;
-    }
-
-    .feed-table td {
-      padding: 8px 16px;
-      border-bottom: 1px solid var(--border);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 300px;
-    }
-
-    .feed-table tr.success td:nth-child(4) { color: var(--green); }
-    .feed-table tr.error td:nth-child(4) { color: var(--red); }
-
-    .feed-scroll {
-      max-height: 420px;
-      overflow-y: auto;
-    }
-
-    .feed-scroll::-webkit-scrollbar { width: 6px; }
-    .feed-scroll::-webkit-scrollbar-track { background: transparent; }
-    .feed-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-
-    .worker-tag {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 4px;
-      background: rgba(99,102,241,0.15);
-      color: var(--accent);
-      font-size: 11px;
-      font-weight: 600;
-    }
-
     .connection-lost {
       position: fixed;
       top: 16px;
@@ -309,6 +59,251 @@
       display: none;
       z-index: 100;
     }
+
+    main { padding: 24px 32px; display: flex; flex-direction: column; gap: 32px; }
+
+    .scraper-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface2);
+    }
+
+    .card-header h2 {
+      font-size: 16px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .status-badge .dot { width: 7px; height: 7px; border-radius: 50%; }
+    .status-badge.running { background: rgba(34,197,94,0.15); color: var(--green); }
+    .status-badge.running .dot { background: var(--green); animation: pulse 1.5s infinite; }
+    .status-badge.paused { background: rgba(245,158,11,0.15); color: var(--amber); }
+    .status-badge.paused .dot { background: var(--amber); }
+    .status-badge.idle { background: rgba(139,143,163,0.15); color: var(--text-dim); }
+    .status-badge.idle .dot { background: var(--text-dim); }
+    .status-badge.stopped, .status-badge.stopping { background: rgba(239,68,68,0.15); color: var(--red); }
+    .status-badge.stopped .dot, .status-badge.stopping .dot { background: var(--red); }
+    .status-badge.stopping .dot { animation: pulse 0.8s infinite; }
+
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    .controls {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .controls button {
+      padding: 6px 14px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .controls button:hover { background: var(--surface2); border-color: var(--accent); }
+    .controls button:disabled { opacity: 0.3; cursor: not-allowed; }
+    .controls button.danger { border-color: rgba(239,68,68,0.4); }
+    .controls button.danger:hover { background: rgba(239,68,68,0.1); border-color: var(--red); }
+    .controls button.start-btn { border-color: rgba(34,197,94,0.4); }
+    .controls button.start-btn:hover { background: rgba(34,197,94,0.1); border-color: var(--green); }
+
+    .worker-control {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 6px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+
+    .worker-control label {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+
+    .worker-control button {
+      width: 24px;
+      height: 24px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--surface2);
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+      padding: 0;
+    }
+
+    .worker-control button:hover { border-color: var(--accent); }
+
+    .worker-control .wc-value {
+      font-size: 16px;
+      font-weight: 700;
+      min-width: 24px;
+      text-align: center;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .card-body { padding: 20px 24px; }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .metric-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+    }
+
+    .metric-card .label {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+
+    .metric-card .value {
+      font-size: 22px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .metric-card .sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+    .metric-card .value.green { color: var(--green); }
+    .metric-card .value.red { color: var(--red); }
+    .metric-card .value.cyan { color: var(--cyan); }
+    .metric-card .value.amber { color: var(--amber); }
+
+    .progress-bar-container {
+      width: 100%;
+      height: 6px;
+      background: var(--surface2);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+
+    .progress-bar {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.5s ease;
+    }
+
+    .progress-bar.sold-bar { background: linear-gradient(90deg, var(--accent), var(--cyan)); }
+    .progress-bar.active-bar { background: linear-gradient(90deg, var(--green), var(--cyan)); }
+
+    .progress-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-bottom: 6px;
+    }
+
+    .feed-section {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    .feed-header {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .feed-header h3 { font-size: 13px; font-weight: 600; }
+    .feed-header .count { font-size: 11px; color: var(--text-dim); }
+
+    .feed-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+
+    .feed-table th {
+      text-align: left;
+      padding: 8px 12px;
+      color: var(--text-dim);
+      font-weight: 500;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface2);
+      position: sticky;
+      top: 0;
+    }
+
+    .feed-table td {
+      padding: 6px 12px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 250px;
+    }
+
+    .feed-table tr.success td:nth-child(4) { color: var(--green); }
+    .feed-table tr.error td:nth-child(4) { color: var(--red); }
+
+    .feed-scroll { max-height: 300px; overflow-y: auto; }
+    .feed-scroll::-webkit-scrollbar { width: 5px; }
+    .feed-scroll::-webkit-scrollbar-track { background: transparent; }
+    .feed-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .worker-tag {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 3px;
+      background: rgba(99,102,241,0.15);
+      color: var(--accent);
+      font-size: 10px;
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
@@ -318,210 +313,206 @@
     <h1>
       <span class="icon">&#9889;</span>
       Phantom Scraper
-      <span class="status-badge idle" id="statusBadge">
-        <span class="dot"></span>
-        <span id="statusText">idle</span>
-      </span>
     </h1>
-    <div class="controls">
-      <div class="worker-control">
-        <label>Workers</label>
-        <button onclick="adjustWorkers(-1)">-</button>
-        <span class="wc-value" id="wcValue">4</span>
-        <button onclick="adjustWorkers(1)">+</button>
-      </div>
-      <button id="btnPause" onclick="send('pause')">Pause</button>
-      <button id="btnResume" onclick="send('resume')" disabled>Resume</button>
-      <button id="btnStop" class="danger" onclick="send('stop')">Stop</button>
-    </div>
   </header>
 
   <main>
-    <div class="metrics">
-      <div class="metric-card">
-        <div class="label">Completed</div>
-        <div class="value green" id="mCompleted">0</div>
-        <div class="sub" id="mCompletedSub">—</div>
+    <!-- SOLD SCRAPER CARD -->
+    <div class="scraper-card" id="soldCard">
+      <div class="card-header">
+        <h2>
+          Sold Scraper
+          <span class="status-badge idle" id="sold_statusBadge">
+            <span class="dot"></span>
+            <span id="sold_statusText">idle</span>
+          </span>
+        </h2>
+        <div class="controls">
+          <div class="worker-control">
+            <label>Workers</label>
+            <button onclick="adjustWorkers('sold', -1)">-</button>
+            <span class="wc-value" id="sold_wcValue">4</span>
+            <button onclick="adjustWorkers('sold', 1)">+</button>
+          </div>
+          <button class="start-btn" id="sold_btnStart" onclick="sendCmd('sold','start')">Start</button>
+          <button id="sold_btnPause" onclick="sendCmd('sold','pause')" disabled>Pause</button>
+          <button id="sold_btnResume" onclick="sendCmd('sold','resume')" disabled>Resume</button>
+          <button class="danger" id="sold_btnStop" onclick="sendCmd('sold','stop')" disabled>Stop</button>
+        </div>
       </div>
-      <div class="metric-card">
-        <div class="label">Failed</div>
-        <div class="value red" id="mFailed">0</div>
-        <div class="sub" id="mFailedRate">0%</div>
-      </div>
-      <div class="metric-card">
-        <div class="label">Flagged</div>
-        <div class="value amber" id="mFlagged">0</div>
-        <div class="sub">duplicates skipped</div>
-      </div>
-      <div class="metric-card">
-        <div class="label">Rate</div>
-        <div class="value cyan" id="mRate">0</div>
-        <div class="sub">pages / min</div>
-      </div>
-      <div class="metric-card">
-        <div class="label">DB Writes / 5 min</div>
-        <div class="value amber" id="mWritesWindow">0</div>
-        <div class="sub" id="mWritesSub">0 total</div>
-      </div>
-      <div class="metric-card">
-        <div class="label">Active Workers</div>
-        <div class="value" id="mWorkers">0</div>
-        <div class="sub" id="mWorkersSub">—</div>
-      </div>
-      <div class="metric-card">
-        <div class="label">Elapsed</div>
-        <div class="value" id="mElapsed">0s</div>
-        <div class="sub" id="mElapsedSub">—</div>
-      </div>
-    </div>
-
-    <div class="progress-section">
-      <div class="progress-labels">
-        <span id="progLabel">0 / 0 tasks</span>
-        <span id="progPct">0%</span>
-      </div>
-      <div class="progress-bar-container">
-        <div class="progress-bar" id="progBar" style="width: 0%"></div>
+      <div class="card-body">
+        <div class="metrics">
+          <div class="metric-card"><div class="label">Completed</div><div class="value green" id="sold_completed">0</div><div class="sub" id="sold_completedSub">—</div></div>
+          <div class="metric-card"><div class="label">Failed</div><div class="value red" id="sold_failed">0</div><div class="sub" id="sold_failedRate">0%</div></div>
+          <div class="metric-card"><div class="label">Flagged</div><div class="value amber" id="sold_flagged">0</div><div class="sub">duplicates</div></div>
+          <div class="metric-card"><div class="label">Rate</div><div class="value cyan" id="sold_rate">0</div><div class="sub">pages/min</div></div>
+          <div class="metric-card"><div class="label">DB Writes / 5 min</div><div class="value amber" id="sold_writes">0</div><div class="sub" id="sold_writesSub">0 total</div></div>
+          <div class="metric-card"><div class="label">Workers</div><div class="value" id="sold_workers">0</div><div class="sub" id="sold_workersSub">—</div></div>
+          <div class="metric-card"><div class="label">Elapsed</div><div class="value" id="sold_elapsed">0s</div></div>
+        </div>
+        <div class="progress-labels"><span id="sold_progLabel">0 / 0</span><span id="sold_progPct">0%</span></div>
+        <div class="progress-bar-container"><div class="progress-bar sold-bar" id="sold_progBar" style="width:0%"></div></div>
+        <div class="feed-section">
+          <div class="feed-header"><h3>Live Feed</h3><span class="count" id="sold_feedCount">0 tasks</span></div>
+          <div class="feed-scroll" id="sold_feedScroll">
+            <table class="feed-table"><thead><tr><th>Time</th><th>W</th><th>Query</th><th>Sold</th><th>Dur</th></tr></thead><tbody id="sold_feedBody"></tbody></table>
+          </div>
+        </div>
       </div>
     </div>
 
-    <div class="feed-section">
-      <div class="feed-header">
-        <h2>Live Feed</h2>
-        <span class="count" id="feedCount">0 tasks</span>
+    <!-- ACTIVE SCRAPER CARD -->
+    <div class="scraper-card" id="activeCard">
+      <div class="card-header">
+        <h2>
+          Active Scraper
+          <span class="status-badge idle" id="active_statusBadge">
+            <span class="dot"></span>
+            <span id="active_statusText">idle</span>
+          </span>
+        </h2>
+        <div class="controls">
+          <div class="worker-control">
+            <label>Workers</label>
+            <button onclick="adjustWorkers('active', -1)">-</button>
+            <span class="wc-value" id="active_wcValue">4</span>
+            <button onclick="adjustWorkers('active', 1)">+</button>
+          </div>
+          <button class="start-btn" id="active_btnStart" onclick="sendCmd('active','start')">Start</button>
+          <button id="active_btnPause" onclick="sendCmd('active','pause')" disabled>Pause</button>
+          <button id="active_btnResume" onclick="sendCmd('active','resume')" disabled>Resume</button>
+          <button class="danger" id="active_btnStop" onclick="sendCmd('active','stop')" disabled>Stop</button>
+        </div>
       </div>
-      <div class="feed-scroll" id="feedScroll">
-        <table class="feed-table">
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Worker</th>
-              <th>Query</th>
-              <th>Sold Count</th>
-              <th>Duration</th>
-            </tr>
-          </thead>
-          <tbody id="feedBody"></tbody>
-        </table>
+      <div class="card-body">
+        <div class="metrics">
+          <div class="metric-card"><div class="label">Completed</div><div class="value green" id="active_completed">0</div><div class="sub" id="active_completedSub">—</div></div>
+          <div class="metric-card"><div class="label">Failed</div><div class="value red" id="active_failed">0</div><div class="sub" id="active_failedRate">0%</div></div>
+          <div class="metric-card"><div class="label">Flagged</div><div class="value amber" id="active_flagged">0</div><div class="sub">duplicates</div></div>
+          <div class="metric-card"><div class="label">Rate</div><div class="value cyan" id="active_rate">0</div><div class="sub">pages/min</div></div>
+          <div class="metric-card"><div class="label">DB Writes / 5 min</div><div class="value amber" id="active_writes">0</div><div class="sub" id="active_writesSub">0 total</div></div>
+          <div class="metric-card"><div class="label">Workers</div><div class="value" id="active_workers">0</div><div class="sub" id="active_workersSub">—</div></div>
+          <div class="metric-card"><div class="label">Elapsed</div><div class="value" id="active_elapsed">0s</div></div>
+        </div>
+        <div class="progress-labels"><span id="active_progLabel">0 / 0</span><span id="active_progPct">0%</span></div>
+        <div class="progress-bar-container"><div class="progress-bar active-bar" id="active_progBar" style="width:0%"></div></div>
+        <div class="feed-section">
+          <div class="feed-header"><h3>Live Feed</h3><span class="count" id="active_feedCount">0 tasks</span></div>
+          <div class="feed-scroll" id="active_feedScroll">
+            <table class="feed-table"><thead><tr><th>Time</th><th>W</th><th>Query</th><th>Active</th><th>Dur</th></tr></thead><tbody id="active_feedBody"></tbody></table>
+          </div>
+        </div>
       </div>
     </div>
   </main>
 
   <script>
     let ws;
-    let taskCount = 0;
-    const writeLog = []; // client-side fallback: timestamps of successful writes
-    const WINDOW_MS = 5 * 60 * 1000;
+    const taskCounts = { sold: 0, active: 0 };
 
     function connect() {
       ws = new WebSocket(`ws://${location.host}`);
-
-      ws.onopen = () => {
-        document.getElementById('connLost').style.display = 'none';
-      };
-
-      ws.onclose = () => {
-        document.getElementById('connLost').style.display = 'block';
-        setTimeout(connect, 2000);
-      };
+      ws.onopen = () => { document.getElementById('connLost').style.display = 'none'; };
+      ws.onclose = () => { document.getElementById('connLost').style.display = 'block'; setTimeout(connect, 2000); };
 
       ws.onmessage = (e) => {
         const msg = JSON.parse(e.data);
 
         if (msg.type === 'init') {
-          updateStats(msg.stats, msg.dbWrites, msg.dbWritesWindow);
-          if (msg.recentTasks) {
-            msg.recentTasks.forEach(t => addFeedRow(t));
-          }
+          if (msg.sold) applySnapshot('sold', msg.sold);
+          if (msg.active) applySnapshot('active', msg.active);
         } else if (msg.type === 'stats') {
-          updateStats(msg.stats, msg.dbWrites, msg.dbWritesWindow);
-        } else if (msg.type === 'task') {
-          if (msg.task && !msg.task.error) {
-            writeLog.push(Date.now());
-          }
-          updateStats(msg.stats, msg.dbWrites, msg.dbWritesWindow);
-          if (msg.task) addFeedRow(msg.task);
+          if (msg.sold) updateStats('sold', msg.sold);
+          if (msg.active) updateStats('active', msg.active);
+        } else if (msg.type === 'poolUpdate') {
+          updateStats(msg.mode, msg);
+          if (msg.task) addFeedRow(msg.mode, msg.task);
+        } else if (msg.type === 'clear') {
+          clearFeed(msg.mode);
         }
       };
     }
 
-    function send(action, value) {
+    function sendCmd(mode, action, value) {
       if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ action, value }));
+        ws.send(JSON.stringify({ action, mode, value }));
       }
     }
 
-    function adjustWorkers(delta) {
-      const el = document.getElementById('wcValue');
+    function adjustWorkers(mode, delta) {
+      const el = document.getElementById(mode + '_wcValue');
       const current = parseInt(el.textContent, 10) || 4;
       const next = Math.max(1, Math.min(current + delta, 24));
       el.textContent = next;
-      send('setWorkers', next);
+      sendCmd(mode, 'setWorkers', next);
     }
 
-    function updateStats(s, dbWrites, dbWritesWindow) {
+    function applySnapshot(mode, snap) {
+      updateStats(mode, snap);
+      if (snap.recentTasks) {
+        snap.recentTasks.forEach(t => addFeedRow(mode, t));
+      }
+    }
+
+    function updateStats(mode, data) {
+      const s = data.stats;
+      if (!s) return;
+      const p = mode + '_';
       const processed = s.completed + s.failed;
       const pct = s.total > 0 ? ((processed / s.total) * 100).toFixed(1) : '0';
 
-      document.getElementById('mCompleted').textContent = s.completed.toLocaleString();
-      document.getElementById('mCompletedSub').textContent = `of ${s.total.toLocaleString()} total`;
-      document.getElementById('mFailed').textContent = s.failed.toLocaleString();
-      document.getElementById('mFailedRate').textContent =
-        processed > 0 ? ((s.failed / processed) * 100).toFixed(1) + '% error rate' : '0%';
-      document.getElementById('mFlagged').textContent = (s.flagged ?? 0).toLocaleString();
-      document.getElementById('mRate').textContent = s.rateNum?.toFixed(1) ?? '0';
-      // Use server-side window count, fall back to client-side tracking
-      const cutoff = Date.now() - WINDOW_MS;
-      while (writeLog.length > 0 && writeLog[0] < cutoff) writeLog.shift();
-      const windowCount = (dbWritesWindow != null && dbWritesWindow > 0) ? dbWritesWindow : writeLog.length;
-      document.getElementById('mWritesWindow').textContent = windowCount.toLocaleString();
-      document.getElementById('mWritesSub').textContent = `${(dbWrites ?? 0).toLocaleString()} total`;
-      document.getElementById('mWorkers').textContent = s.activeWorkers;
-      document.getElementById('mWorkersSub').textContent = `target: ${s.targetWorkers ?? s.activeWorkers} · ${s.queueRemaining?.toLocaleString() ?? 0} in queue`;
-      document.getElementById('wcValue').textContent = s.targetWorkers ?? s.activeWorkers;
-      document.getElementById('mElapsed').textContent = s.elapsed;
+      document.getElementById(p + 'completed').textContent = s.completed.toLocaleString();
+      document.getElementById(p + 'completedSub').textContent = `of ${s.total.toLocaleString()} total`;
+      document.getElementById(p + 'failed').textContent = s.failed.toLocaleString();
+      document.getElementById(p + 'failedRate').textContent = processed > 0 ? ((s.failed / processed) * 100).toFixed(1) + '% error' : '0%';
+      document.getElementById(p + 'flagged').textContent = (s.flagged ?? 0).toLocaleString();
+      document.getElementById(p + 'rate').textContent = s.rateNum?.toFixed(1) ?? '0';
+      document.getElementById(p + 'writes').textContent = (data.dbWritesWindow ?? 0).toLocaleString();
+      document.getElementById(p + 'writesSub').textContent = `${(data.dbWrites ?? 0).toLocaleString()} total`;
+      document.getElementById(p + 'workers').textContent = s.activeWorkers;
+      document.getElementById(p + 'workersSub').textContent = `target: ${s.targetWorkers ?? s.activeWorkers}`;
+      document.getElementById(p + 'wcValue').textContent = s.targetWorkers ?? s.activeWorkers;
+      document.getElementById(p + 'elapsed').textContent = s.elapsed;
 
-      document.getElementById('progLabel').textContent =
-        `${processed.toLocaleString()} / ${s.total.toLocaleString()} tasks`;
-      document.getElementById('progPct').textContent = pct + '%';
-      document.getElementById('progBar').style.width = pct + '%';
+      document.getElementById(p + 'progLabel').textContent = `${processed.toLocaleString()} / ${s.total.toLocaleString()}`;
+      document.getElementById(p + 'progPct').textContent = pct + '%';
+      document.getElementById(p + 'progBar').style.width = pct + '%';
 
-      // Status badge
-      const badge = document.getElementById('statusBadge');
-      const text = document.getElementById('statusText');
+      const badge = document.getElementById(p + 'statusBadge');
+      const text = document.getElementById(p + 'statusText');
       badge.className = 'status-badge ' + s.status;
       text.textContent = s.status;
 
-      // Button states
       const isRunning = s.status === 'running';
       const isPaused = s.status === 'paused';
-      document.getElementById('btnPause').disabled = !isRunning;
-      document.getElementById('btnResume').disabled = !isPaused;
-      document.getElementById('btnStop').disabled = s.status === 'stopped' || s.status === 'idle';
+      const isIdle = s.status === 'idle' || s.status === 'stopped' || s.status === 'stopping';
+      document.getElementById(p + 'btnStart').disabled = !isIdle;
+      document.getElementById(p + 'btnPause').disabled = !isRunning;
+      document.getElementById(p + 'btnResume').disabled = !isPaused;
+      document.getElementById(p + 'btnStop').disabled = isIdle;
     }
 
-    function addFeedRow(task) {
-      taskCount++;
-      document.getElementById('feedCount').textContent = taskCount + ' tasks';
-
-      const tbody = document.getElementById('feedBody');
+    function addFeedRow(mode, task) {
+      taskCounts[mode]++;
+      document.getElementById(mode + '_feedCount').textContent = taskCounts[mode] + ' tasks';
+      const tbody = document.getElementById(mode + '_feedBody');
       const tr = document.createElement('tr');
       tr.className = task.error ? 'error' : 'success';
-
       tr.innerHTML = `
         <td>${task.time}</td>
         <td><span class="worker-tag">W${task.workerId}</span></td>
         <td title="${esc(task.query)}">${esc(task.query)}</td>
-        <td>${task.error ? esc(task.error).substring(0, 40) : task.count?.toLocaleString()}</td>
+        <td>${task.error ? esc(task.error).substring(0, 30) : task.count?.toLocaleString()}</td>
         <td>${(task.durationMs / 1000).toFixed(1)}s</td>
       `;
-
       tbody.insertBefore(tr, tbody.firstChild);
+      while (tbody.children.length > 200) tbody.removeChild(tbody.lastChild);
+    }
 
-      // Keep max 200 rows
-      while (tbody.children.length > 200) {
-        tbody.removeChild(tbody.lastChild);
-      }
+    function clearFeed(mode) {
+      taskCounts[mode] = 0;
+      document.getElementById(mode + '_feedBody').innerHTML = '';
+      document.getElementById(mode + '_feedCount').textContent = '0 tasks';
     }
 
     function esc(s) {

@@ -1,11 +1,13 @@
 {
   "name": "phantom-scraper",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "tsx src/index.ts",
-    "start:dry": "tsx src/index.ts --dry-run"
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "start:dev": "tsx src/index.ts",
+    "start:dry": "node dist/index.js --dry-run"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.89.0",
