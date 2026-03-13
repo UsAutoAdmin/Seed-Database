@@ -1,5 +1,7 @@
 node_modules/
 dist/
-.env.local
-.env
 .DS_Store
+.env*.local
+.env
+*.tsbuildinfo
+.cursor/

@@ -115,3 +115,30 @@ export async function scrapeSoldPage(
     return { count: null, error: message };
   }
 }
+
+/**
+ * Extract listing titles from the current sold search results page.
+ * eBay uses: ul.srp-results > li.s-card, title in div.s-card__title
+ */
+export async function extractListingTitlesFromPage(
+  page: Page,
+  maxTitles: number
+): Promise<string[]> {
+  try {
+    await page.waitForSelector("div.s-card__title", { timeout: 5000 });
+  } catch {
+    // titles may not be present (zero results page)
+  }
+
+  const titles = await page.$$eval(
+    "ul.srp-results > li.s-card div.s-card__title",
+    (els, max) =>
+      els
+        .map((el) => el.textContent?.trim() ?? "")
+        .filter((t) => t.length > 3 && t !== "Shop on eBay")
+        .slice(0, max),
+    maxTitles
+  );
+
+  return titles;
+}

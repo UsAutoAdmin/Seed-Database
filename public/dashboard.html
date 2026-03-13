@@ -355,7 +355,7 @@
         <div class="feed-section">
           <div class="feed-header"><h3>Live Feed</h3><span class="count" id="sold_feedCount">0 tasks</span></div>
           <div class="feed-scroll" id="sold_feedScroll">
-            <table class="feed-table"><thead><tr><th>Time</th><th>W</th><th>Query</th><th>Sold</th><th>Dur</th></tr></thead><tbody id="sold_feedBody"></tbody></table>
+            <table class="feed-table"><thead><tr><th>Time</th><th>W</th><th>Query</th><th>Sold</th><th>Sell through</th><th>Conf.</th><th>Dur</th></tr></thead><tbody id="sold_feedBody"></tbody></table>
           </div>
         </div>
       </div>
@@ -426,7 +426,21 @@
           if (msg.active) updateStats('active', msg.active);
         } else if (msg.type === 'poolUpdate') {
           updateStats(msg.mode, msg);
-          if (msg.task) addFeedRow(msg.mode, msg.task);
+          if (msg.recentTasks && msg.recentTasks.length > 0) {
+            clearFeed(msg.mode);
+            msg.recentTasks.forEach(t => addFeedRow(msg.mode, t));
+          } else if (msg.task) {
+            addFeedRow(msg.mode, msg.task);
+          }
+        } else if (msg.type === 'confidence' && msg.mode === 'sold' && msg.taskId != null) {
+          var c = typeof msg.confidence === 'number' ? msg.confidence : parseFloat(msg.confidence);
+          if (!isNaN(c)) {
+            confidenceByTaskId[msg.taskId] = c;
+            var row = document.querySelector('#sold_feedBody tr[data-task-id="' + msg.taskId + '"]');
+            if (row && row.cells[5]) {
+              row.cells[5].textContent = (c * 100).toFixed(0) + '%';
+            }
+          }
         } else if (msg.type === 'clear') {
           clearFeed(msg.mode);
         }
@@ -497,22 +511,45 @@
       document.getElementById(mode + '_feedCount').textContent = taskCounts[mode] + ' tasks';
       const tbody = document.getElementById(mode + '_feedBody');
       const tr = document.createElement('tr');
+      if (mode === 'sold' && task.taskId) tr.dataset.taskId = task.taskId;
       tr.className = task.error ? 'error' : 'success';
-      tr.innerHTML = `
+      const sellThroughCell = mode === 'sold'
+        ? '<td>' + (task.sellThrough != null ? task.sellThrough.toFixed(1) + '%' : '—') + '</td>'
+        : '';
+      const confNum = mode === 'sold'
+        ? (task.confidence != null ? task.confidence : (task.taskId ? confidenceByTaskId[task.taskId] : null))
+        : null;
+      const confidenceCell = mode === 'sold'
+        ? '<td>' + (confNum != null ? (confNum * 100).toFixed(0) + '%' : '—') + '</td>'
+        : '';
+      tr.innerHTML = mode === 'sold'
+        ? `
         <td>${task.time}</td>
         <td><span class="worker-tag">W${task.workerId}</span></td>
         <td title="${esc(task.query)}">${esc(task.query)}</td>
-        <td>${task.error ? esc(task.error).substring(0, 30) : task.count?.toLocaleString()}</td>
+        <td>${task.error ? esc(task.error).substring(0, 30) : (task.count?.toLocaleString() ?? '')}</td>
+        ${sellThroughCell}
+        ${confidenceCell}
+        <td>${(task.durationMs / 1000).toFixed(1)}s</td>
+      `
+        : `
+        <td>${task.time}</td>
+        <td><span class="worker-tag">W${task.workerId}</span></td>
+        <td title="${esc(task.query)}">${esc(task.query)}</td>
+        <td>${task.error ? esc(task.error).substring(0, 30) : (task.count?.toLocaleString() ?? '')}</td>
         <td>${(task.durationMs / 1000).toFixed(1)}s</td>
       `;
       tbody.insertBefore(tr, tbody.firstChild);
       while (tbody.children.length > 200) tbody.removeChild(tbody.lastChild);
     }
 
+    var confidenceByTaskId = {};
+
     function clearFeed(mode) {
       taskCounts[mode] = 0;
       document.getElementById(mode + '_feedBody').innerHTML = '';
       document.getElementById(mode + '_feedCount').textContent = '0 tasks';
+      if (mode === 'sold') confidenceByTaskId = {};
     }
 
     function esc(s) {

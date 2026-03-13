@@ -6,6 +6,8 @@ dotenvConfig({ path: resolve(import.meta.dirname, "../.env.local") });
 export interface ScrapeTask {
   id: string;
   sold_link: string;
+  /** Active count (from table 9) for computing sell_through = sold/active * 100. */
+  active?: string;
   status: "pending" | "in_progress" | "completed" | "failed";
   retry_count: number;
   result?: number | null;
@@ -21,6 +23,8 @@ export interface ScraperConfig {
   retryDelayMs: number;
   headless: boolean;
   dryRun: boolean;
+  /** When sell-through (sold/active %) > this, we run LLM verification and set sold_confidence (0 = disabled). Default 60. */
+  soldVerificationThreshold: number;
 }
 
 function parseArgs(): Partial<ScraperConfig> {
@@ -54,6 +58,10 @@ function parseArgs(): Partial<ScraperConfig> {
       case "--dry-run":
         parsed.dryRun = true;
         break;
+      case "--verify-threshold":
+        parsed.soldVerificationThreshold = parseInt(next, 10);
+        i++;
+        break;
     }
   }
 
@@ -72,7 +80,16 @@ export function loadConfig(): ScraperConfig {
     retryDelayMs: overrides.retryDelayMs ?? 5_000,
     headless: overrides.headless ?? true,
     dryRun: overrides.dryRun ?? false,
+    soldVerificationThreshold: overrides.soldVerificationThreshold ?? 60,
   };
+}
+
+export function getOpenAIApiKey(): string | undefined {
+  return process.env.OPENAI_API_KEY;
+}
+
+export function getAnthropicApiKey(): string | undefined {
+  return process.env.ANTHROPIC_API_KEY;
 }
 
 export function getSupabaseCredentials() {

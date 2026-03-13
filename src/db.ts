@@ -30,10 +30,11 @@ export async function claimSoldBatch(
   });
 
   if (error) {
-    throw new Error(`Failed to claim sold batch: ${error.message}`);
+    console.error(`[sold] claimSoldBatch error: ${error.message}`);
+    return { tasks: [], flagged: 0 };
   }
 
-  const rows: Array<{ id: string; sold_link: string }> = data ?? [];
+  const rows: Array<Record<string, unknown> & { id: string; sold_link: string }> = data ?? [];
 
   const seen = new Map<string, string[]>();
   const unique: ScrapeTask[] = [];
@@ -41,6 +42,8 @@ export async function claimSoldBatch(
 
   for (const row of rows) {
     const key = extractNkw(row.sold_link);
+    const activeVal = row.active ?? row.Active;
+    const active = activeVal != null && activeVal !== "" ? String(activeVal) : undefined;
     const existing = seen.get(key);
     if (existing) {
       existing.push(row.id);
@@ -50,6 +53,7 @@ export async function claimSoldBatch(
       unique.push({
         id: row.id,
         sold_link: row.sold_link,
+        active,
         status: "pending",
         retry_count: 0,
       });
@@ -65,15 +69,28 @@ export async function claimSoldBatch(
 
 /**
  * Write sold count to 9_Octoparse_Scrapes and mark sold_scraped='true'.
+ * When sold > 0 and active is provided (and > 0), set sell_through = (sold/active)*100.
+ * When sold === 0, only set sold and sold_scraped; leave sell_through and sold_confidence null.
  */
 export async function writeSoldCount(
   id: string,
-  soldCount: number
+  soldCount: number,
+  active?: string
 ): Promise<void> {
   const db = getClient();
+  const payload: Record<string, unknown> = {
+    sold: String(soldCount),
+    sold_scraped: "true",
+  };
+  if (soldCount > 0 && active != null && active !== "") {
+    const activeNum = parseFloat(active.replace(/,/g, ""));
+    if (!Number.isNaN(activeNum) && activeNum > 0) {
+      payload.sell_through = Math.round((soldCount / activeNum) * 100 * 100) / 100;
+    }
+  }
   const { error } = await db
     .from("9_Octoparse_Scrapes")
-    .update({ sold: String(soldCount), sold_scraped: "true" })
+    .update(payload)
     .eq("id", id);
 
   if (error) {
@@ -97,6 +114,21 @@ async function flagSoldRows(ids: string[]): Promise<void> {
 }
 
 /**
+ * Fetch active count for a row (fallback when RPC doesn't return active).
+ */
+export async function getActiveForSoldRow(id: string): Promise<string | null> {
+  const db = getClient();
+  const { data, error } = await db
+    .from("9_Octoparse_Scrapes")
+    .select("active")
+    .eq("id", id)
+    .maybeSingle();
+  if (error || !data) return null;
+  const a = (data as { active?: string | null }).active;
+  return a != null && a !== "" ? a : null;
+}
+
+/**
  * Release a pending sold row back (e.g. on failure after retries).
  */
 export async function releaseSoldRow(id: string): Promise<void> {
@@ -105,6 +137,27 @@ export async function releaseSoldRow(id: string): Promise<void> {
     .from("9_Octoparse_Scrapes")
     .update({ sold_scraped: null })
     .eq("id", id);
+}
+
+/**
+ * Update sold_confidence (0-1) and sold_verified_at after LLM verification.
+ */
+export async function updateSoldConfidence(
+  id: string,
+  confidence: number
+): Promise<void> {
+  const db = getClient();
+  const { error } = await db
+    .from("9_Octoparse_Scrapes")
+    .update({
+      sold_confidence: Math.max(0, Math.min(1, confidence)),
+      sold_verified_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+
+  if (error) {
+    throw new Error(`Failed to update sold_confidence for ${id}: ${error.message}`);
+  }
 }
 
 // ─── Active Scraper (table 8 → table 9) ──────────────────────────────────────
@@ -213,7 +266,7 @@ function generateSoldLink(activeLink: string): string {
   }
 }
 
-function extractNkw(url: string): string {
+export function extractNkw(url: string): string {
   try {
     const u = new URL(url);
     return u.searchParams.get("_nkw") ?? url;

@@ -14,6 +14,9 @@ interface RecentTask {
   error?: string;
   durationMs: number;
   mode: ScraperMode;
+  taskId?: string;
+  sellThrough?: number | null;
+  confidence?: number | null;
 }
 
 interface PoolState {
@@ -127,6 +130,10 @@ export class Dashboard {
       });
     }, 2000);
 
+    setInterval(() => {
+      this.broadcast({ type: "ping", ts: Date.now() });
+    }, 30_000);
+
     this.httpServer.listen(DASHBOARD_PORT, () => {
       console.log(`\n  Dashboard: http://localhost:${DASHBOARD_PORT}\n`);
     });
@@ -135,6 +142,7 @@ export class Dashboard {
   private addRecentTask(mode: ScraperMode, event: TaskEvent, success: boolean): void {
     const state = this.pools[mode];
     const query = extractQuery(event.url);
+    const ev = event as TaskEvent & { sellThrough?: number | null; confidence?: number | null };
     state.recentTasks.push({
       time: new Date().toLocaleTimeString(),
       workerId: event.workerId,
@@ -143,6 +151,9 @@ export class Dashboard {
       error: success ? undefined : event.error,
       durationMs: event.durationMs,
       mode,
+      taskId: event.taskId,
+      sellThrough: ev.sellThrough ?? undefined,
+      confidence: ev.confidence ?? undefined,
     });
     if (state.recentTasks.length > this.maxRecent) {
       state.recentTasks = state.recentTasks.slice(-this.maxRecent);
@@ -191,6 +202,16 @@ export class Dashboard {
     });
   }
 
+  /** Update confidence for a sold task when verification worker finishes. */
+  updateTaskConfidence(mode: ScraperMode, taskId: string, confidence: number): void {
+    const state = this.pools[mode];
+    const task = state.recentTasks.find((t) => t.taskId === taskId);
+    if (task) task.confidence = confidence;
+    const payload = { type: "confidence" as const, mode, taskId, confidence };
+    this.broadcast(payload);
+    console.log(`[dashboard] Confidence broadcast: ${(confidence * 100).toFixed(0)}% for ${taskId.slice(0, 8)}…`);
+  }
+
   private getPoolSnapshot(mode: ScraperMode) {
     const state = this.pools[mode];
     this.pruneTimestamps(mode);
@@ -198,7 +219,7 @@ export class Dashboard {
       stats: state.pool.getStats(),
       dbWrites: state.dbWrites,
       dbWritesWindow: state.writeTimestamps.length,
-      recentTasks: state.recentTasks.slice(-50),
+      recentTasks: state.recentTasks.slice(-100),
     };
   }
 

@@ -2,13 +2,15 @@ import { EventEmitter } from "events";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import type { ScraperConfig, ScrapeTask } from "./config.js";
 import type { ActiveTask } from "./db.js";
-import { scrapeSoldPage } from "./scraper.js";
+import { scrapeSoldPage, extractListingTitlesFromPage } from "./scraper.js";
 import {
   writeSoldCount,
   releaseSoldRow,
   writeActiveResult,
+  getActiveForSoldRow,
   isBrokenUrl,
   SeenUrlTracker,
+  extractNkw,
 } from "./db.js";
 
 export type ScraperMode = "sold" | "active";
@@ -32,6 +34,10 @@ export interface TaskEvent {
   count: number | null;
   error?: string;
   durationMs: number;
+  /** Sold/active ratio as percentage (sold scraper only). */
+  sellThrough?: number | null;
+  /** LLM confidence 0–1 (sold scraper only; may be set later by verification worker). */
+  confidence?: number | null;
 }
 
 const USER_AGENTS = [
@@ -63,6 +69,9 @@ export class WorkerPool extends EventEmitter {
   private _nextWorkerId = 0;
   private seenUrls = new SeenUrlTracker();
   private _sessionStartTime = Date.now();
+  private _tasksSinceBrowserRecycle = 0;
+  private _browserRecycleThreshold = 2000;
+  private _browserDisconnected = false;
   private stats: PoolStats = {
     total: 0,
     completed: 0,
@@ -89,13 +98,33 @@ export class WorkerPool extends EventEmitter {
   }
 
   async initialize(): Promise<void> {
+    await this._launchBrowser();
+    this.stats.status = "idle";
+    this.emit("status", this.getStats());
+  }
+
+  private async _launchBrowser(): Promise<void> {
+    this._browserDisconnected = false;
     if (this.sharedBrowser) {
       this.browser = this.sharedBrowser;
     } else {
       this.browser = await chromium.launch({ headless: this.config.headless });
     }
-    this.stats.status = "idle";
-    this.emit("status", this.getStats());
+    this.browser!.on("disconnected", () => {
+      console.error(`[${this.mode}] Browser disconnected unexpectedly!`);
+      this._browserDisconnected = true;
+    });
+  }
+
+  async recycleBrowser(): Promise<void> {
+    if (this.sharedBrowser) return;
+    console.log(`[${this.mode}] Recycling browser (${this._tasksSinceBrowserRecycle} tasks since last recycle)…`);
+    try {
+      if (this.browser) await this.browser.close().catch(() => {});
+    } catch {}
+    await this._launchBrowser();
+    this._tasksSinceBrowserRecycle = 0;
+    console.log(`[${this.mode}] Browser recycled.`);
   }
 
   loadTasks(tasks: Array<ScrapeTask | ActiveTask>): void {
@@ -121,6 +150,17 @@ export class WorkerPool extends EventEmitter {
     }
 
     await Promise.all(this._runningWorkerPromises);
+
+    if (this._browserDisconnected && this.queue.length > 0 && !this._stopping) {
+      console.log(`[${this.mode}] Browser crashed mid-batch. Recycling and resuming ${this.queue.length} remaining tasks…`);
+      await this.recycleBrowser();
+      return this.run();
+    }
+
+    if (this._tasksSinceBrowserRecycle >= this._browserRecycleThreshold && !this._stopping) {
+      await this.recycleBrowser();
+    }
+
     if (!this._stopping) this.stats.status = "idle";
     this.emit("status", this.getStats());
     return this.getStats();
@@ -208,20 +248,21 @@ export class WorkerPool extends EventEmitter {
   private async runWorker(workerId: number): Promise<void> {
     if (!this.browser) return;
 
-    const context = await this.browser.newContext({
+    let context = await this.browser.newContext({
       userAgent: pickUserAgent(),
       viewport: { width: 1920, height: 1080 },
       locale: "en-US",
       timezoneId: "America/Chicago",
     });
 
-    const page = await context.newPage();
+    let page = await context.newPage();
     this._activeWorkers++;
     this.stats.activeWorkers = this._activeWorkers;
 
     try {
       while (!this._stopping) {
         if (this._activeWorkers > this._targetWorkers) break;
+        if (this._browserDisconnected) break;
 
         await this.waitIfPaused();
         if (this._stopping) break;
@@ -231,10 +272,20 @@ export class WorkerPool extends EventEmitter {
 
         this.stats.queueRemaining = this.queue.length;
 
-        if (this.mode === "sold") {
-          await this.processSoldTask(page, task as ScrapeTask, workerId);
-        } else {
-          await this.processActiveTask(page, task as ActiveTask, workerId);
+        try {
+          if (this.mode === "sold") {
+            await this.processSoldTask(page, task as ScrapeTask, workerId);
+          } else {
+            await this.processActiveTask(page, task as ActiveTask, workerId);
+          }
+          this._tasksSinceBrowserRecycle++;
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg.includes("Target closed") || msg.includes("Session closed") || msg.includes("Browser closed")) {
+            console.warn(`[${this.mode}] [W${workerId}] Browser context died, will break and re-create.`);
+            break;
+          }
+          throw err;
         }
 
         await randomDelay(this.config.requestDelayMs);
@@ -242,8 +293,8 @@ export class WorkerPool extends EventEmitter {
     } finally {
       this._activeWorkers--;
       this.stats.activeWorkers = this._activeWorkers;
-      await page.close();
-      await context.close();
+      try { await page.close(); } catch {}
+      try { await context.close(); } catch {}
     }
   }
 
@@ -284,8 +335,47 @@ export class WorkerPool extends EventEmitter {
       );
 
       if (count !== null) {
+        let active = task.active;
+        if (count > 0 && (active == null || active === "")) {
+          const fetched = await getActiveForSoldRow(task.id);
+          if (fetched != null) active = fetched;
+        }
         if (!this.config.dryRun) {
-          await writeSoldCount(task.id, count);
+          await writeSoldCount(task.id, count, active);
+        }
+        const threshold = this.config.soldVerificationThreshold ?? 0;
+        const activeNum =
+          active != null && active !== ""
+            ? parseFloat(active.replace(/,/g, ""))
+            : NaN;
+        const sellThroughPct =
+          count > 0 && !Number.isNaN(activeNum) && activeNum > 0
+            ? (count / activeNum) * 100
+            : null;
+        if (
+          threshold > 0 &&
+          sellThroughPct !== null &&
+          sellThroughPct > threshold
+        ) {
+          try {
+            const titles = await extractListingTitlesFromPage(page, 15);
+            if (titles.length > 0) {
+              this.emit("verification:enqueue", {
+                id: task.id,
+                nkw: extractNkw(task.sold_link),
+                titles,
+              });
+              console.log(
+                `[sold] Verification enqueued: ${titles.length} titles, sell-through ${sellThroughPct.toFixed(1)}%`
+              );
+            } else {
+              console.warn(
+                `[sold] Sell-through ${sellThroughPct.toFixed(1)}% but 0 listing titles extracted — selectors may need update`
+              );
+            }
+          } catch (err) {
+            console.warn("[sold] Title extraction failed:", err instanceof Error ? err.message : err);
+          }
         }
         this.stats.completed++;
         this.stats.queueRemaining = this.queue.length;
@@ -295,6 +385,8 @@ export class WorkerPool extends EventEmitter {
           url: task.sold_link,
           count,
           durationMs: Date.now() - taskStart,
+          sellThrough: sellThroughPct ?? null,
+          confidence: null,
         } as TaskEvent);
         this.emit("status", this.getStats());
         return;

@@ -1,8 +1,13 @@
-import { chromium } from "playwright";
-import { loadConfig } from "./config.js";
+import { loadConfig, getOpenAIApiKey, getAnthropicApiKey } from "./config.js";
 import { claimSoldBatch, fetchPendingActiveTasks, resetActiveSeenUrls } from "./db.js";
 import { WorkerPool, type TaskEvent, type ScraperMode } from "./worker-pool.js";
 import { Dashboard } from "./dashboard.js";
+import {
+  enqueueVerification,
+  startVerificationWorker,
+  stopVerificationWorker,
+  setOnConfidenceUpdate,
+} from "./verification.js";
 
 const runningLoops: Record<ScraperMode, boolean> = { sold: false, active: false };
 
@@ -99,6 +104,17 @@ function attachPoolLogging(pool: WorkerPool) {
 }
 
 async function main() {
+  process.on("uncaughtException", (err) => {
+    const mem = process.memoryUsage();
+    console.error(`\n[FATAL] Uncaught exception (RSS ${(mem.rss / 1024 / 1024).toFixed(0)} MB):`, err);
+    process.exit(1);
+  });
+  process.on("unhandledRejection", (reason, _promise) => {
+    const mem = process.memoryUsage();
+    console.error(`\n[FATAL] Unhandled rejection (RSS ${(mem.rss / 1024 / 1024).toFixed(0)} MB):`, reason);
+    process.exit(1);
+  });
+
   const config = loadConfig();
 
   console.log("╔══════════════════════════════════════════════╗");
@@ -113,17 +129,27 @@ async function main() {
     delay: `${config.requestDelayMs[0]}-${config.requestDelayMs[1]}ms`,
     headless: config.headless,
     dryRun: config.dryRun,
+    soldVerificationThreshold: config.soldVerificationThreshold || "off",
   });
+  if (config.soldVerificationThreshold > 0) {
+    const hasAnthropic = getAnthropicApiKey();
+    const hasOpenAI = getOpenAIApiKey();
+    console.log(
+      hasAnthropic
+        ? `[verify] LLM verification when sell-through > ${config.soldVerificationThreshold}% (ANTHROPIC_API_KEY)`
+        : hasOpenAI
+          ? `[verify] LLM verification when sell-through > ${config.soldVerificationThreshold}% (OPENAI_API_KEY)`
+          : `[verify] Sell-through > ${config.soldVerificationThreshold}% set but no ANTHROPIC_API_KEY or OPENAI_API_KEY — confidence will not be written`
+    );
+  }
   console.log();
 
   if (config.dryRun) {
     console.log("⚠  DRY RUN — no data will be written to Supabase\n");
   }
 
-  const browser = await chromium.launch({ headless: config.headless });
-
-  const soldPool = new WorkerPool(config, "sold", browser);
-  const activePool = new WorkerPool(config, "active", browser);
+  const soldPool = new WorkerPool(config, "sold");
+  const activePool = new WorkerPool(config, "active");
 
   const dashboard = new Dashboard(
     soldPool,
@@ -135,12 +161,39 @@ async function main() {
   attachPoolLogging(soldPool);
   attachPoolLogging(activePool);
 
+  soldPool.on("verification:enqueue", (job: { id: string; nkw: string; titles: string[] }) => {
+    enqueueVerification(job);
+  });
+  setOnConfidenceUpdate((id, confidence) => {
+    dashboard.updateTaskConfidence("sold", id, confidence);
+  });
+  startVerificationWorker();
+
+  setInterval(() => {
+    const mem = process.memoryUsage();
+    const rss = (mem.rss / 1024 / 1024).toFixed(0);
+    const heap = (mem.heapUsed / 1024 / 1024).toFixed(0);
+    console.log(`[keep-alive] Scraper running — RSS ${rss} MB, heap ${heap} MB`);
+  }, 5 * 60 * 1000);
+
+  const supabaseKeepAlive = async () => {
+    try {
+      const { getClient } = await import("./db.js");
+      await getClient().from("9_Octoparse_Scrapes").select("id").limit(1).maybeSingle();
+    } catch {
+      // ignore
+    }
+  };
+  setInterval(supabaseKeepAlive, 5 * 60 * 1000);
+
   process.on("SIGINT", async () => {
     console.log("\nShutting down...");
+    stopVerificationWorker();
     soldPool.stop();
     activePool.stop();
+    await soldPool.shutdown();
+    await activePool.shutdown();
     await dashboard.shutdown();
-    await browser.close();
     process.exit(0);
   });
 
@@ -151,12 +204,12 @@ async function main() {
 
     console.log("Dashboard ready. Press Start on either scraper to begin.");
 
-    // Keep process alive
     await new Promise<void>(() => {});
   } catch (err) {
     console.error("Fatal error:", err);
+    await soldPool.shutdown();
+    await activePool.shutdown();
     await dashboard.shutdown();
-    await browser.close();
     process.exit(1);
   }
 }

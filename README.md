@@ -10,6 +10,9 @@ A high-performance local web scraping engine that extracts sold and active listi
 - **Claim-based Batching** — Sold scraper uses `FOR UPDATE SKIP LOCKED` so multiple machines can scrape without overlapping
 - **Anti-detection** — User agent rotation, randomized delays, retry with exponential backoff
 - **Duplicate Detection** — Cross-batch URL tracking, broken URL flagging, unique constraint on `original_url`
+- **LLM Verification** — For high sell-through items (>60%), listing titles are sent to Anthropic/OpenAI for confidence grading
+- **Browser Recycling** — Chromium is recycled every 2,000 tasks to prevent memory leaks during long runs
+- **Auto-restart** — `run.sh` wrapper uses `caffeinate` to prevent macOS sleep and auto-restarts on crash
 
 ## Architecture
 
@@ -72,10 +75,14 @@ SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6...
 > - `NEXT_PUBLIC_SUPABASE_URL` — Supabase Dashboard → Settings → API → Project URL
 > - `SUPABASE_SERVICE_ROLE_KEY` — Supabase Dashboard → Settings → API → `service_role` key (secret)
 
-### 5. Build
+### 5. (Optional) Add LLM API key for sold-listing verification
+
+For items with sell-through > 60%, the scraper can verify listing relevance via LLM. Add to `.env.local`:
 
 ```bash
-npm run build
+ANTHROPIC_API_KEY=sk-ant-...   # Preferred
+# OR
+OPENAI_API_KEY=sk-...          # Used when Anthropic key is not set
 ```
 
 ### 6. Run
@@ -84,33 +91,43 @@ npm run build
 npm start
 ```
 
+Or for long-running sessions with auto-restart and sleep prevention:
+
+```bash
+bash run.sh
+```
+
 Open `http://localhost:3847` in your browser. Press **Start** on either scraper card to begin.
 
 ## CLI Options
 
 ```bash
-node dist/index.js [options]
+npx tsx src/index.ts [options]
 
 Options:
-  --workers <n>       Number of parallel workers (default: 4)
-  --batch-size <n>    Tasks per batch (default: 500)
-  --timeout <ms>      Page load timeout in ms (default: 30000)
-  --retries <n>       Max retries per task (default: 3)
-  --headed            Show browser windows (default: headless)
-  --dry-run           Scrape pages but don't write to Supabase
+  --workers <n>           Number of parallel workers (default: 4)
+  --batch-size <n>        Tasks per batch (default: 500)
+  --timeout <ms>          Page load timeout in ms (default: 30000)
+  --retries <n>           Max retries per task (default: 3)
+  --headed                Show browser windows (default: headless)
+  --dry-run               Scrape pages but don't write to Supabase
+  --verify-threshold <n>  Sell-through % to trigger LLM verification (default: 60, 0 to disable)
 ```
 
 ### Examples
 
 ```bash
 # Run with 8 workers
-node dist/index.js --workers 8
+npm start -- --workers 8
 
 # Dry run to test without writing
-node dist/index.js --dry-run --headed
+npm start -- --dry-run --headed
 
-# High-throughput on dedicated machine
-node dist/index.js --workers 12
+# High-throughput on dedicated machine with auto-restart
+bash run.sh --workers 12
+
+# Disable LLM verification
+npm start -- --verify-threshold 0
 ```
 
 ## Dashboard Controls
@@ -147,7 +164,7 @@ The following Supabase tables and functions must exist:
 
 ### Tables
 - `8_Research_Assistant` — Source table with `link` (active eBay search URLs)
-- `9_Octoparse_Scrapes` — Results table with `original_url`, `active`, `sold`, `sold_link`, `sold_scraped`
+- `9_Octoparse_Scrapes` — Results table with `original_url`, `active`, `sold`, `sold_link`, `sold_scraped`, `sell_through`, `sold_confidence`, `sold_verified_at`
 
 ### RPC Functions
 - `fetch_pending_active_scrapes(batch_size)` — Returns rows from table 8 not yet in table 9
@@ -166,9 +183,13 @@ The following Supabase tables and functions must exist:
 │   ├── db.ts             # All Supabase reads/writes for both scrapers
 │   ├── worker-pool.ts    # Parallel Playwright workers, task processing
 │   ├── scraper.ts        # eBay page navigation and count extraction
-│   └── dashboard.ts      # HTTP + WebSocket server for the dashboard
+│   ├── dashboard.ts      # HTTP + WebSocket server for the dashboard
+│   └── verification.ts   # LLM confidence grading for sold listings
 ├── public/
 │   └── dashboard.html    # Dashboard UI (metrics, controls, live feed)
+├── supabase/migrations/  # Database schema changes and RPC functions
+├── run.sh                # Auto-restart wrapper with caffeinate
+├── ENV_SETUP.md          # Detailed environment setup guide
 ├── package.json
 ├── tsconfig.json
 └── .env.local            # (create this — not committed)
