@@ -22,4 +22,9 @@ On a new machine:
    ```
    Dashboard: http://localhost:3847
 
-3. **Long runs:** The scraper sends a WebSocket ping every 30s and a lightweight Supabase ping every 5 min to keep connections alive. To prevent your Mac from sleeping and stopping the process, run in a terminal with: `caffeinate -s node dist/index.js --workers=4` (or use System Settings → Lock Screen / Battery to prevent sleep).
+3. **Long runs (10+ days):** The scraper is tuned for 10-day runs:
+   - WebSocket protocol ping every 25s (keeps dashboard connections alive)
+   - Supabase keep-alive every 1 min (prevents connection timeouts)
+   - Browser recycle every 2,000 tasks or 6 hours
+   - Uptime + memory logged every 5 min
+   - Use `run.sh` (or `caffeinate -s node dist/index.js --workers=4`) to prevent macOS sleep

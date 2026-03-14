@@ -60,7 +60,11 @@ export class Dashboard {
 
   start(): void {
     this.httpServer = createServer((req, res) => this.handleHttp(req, res));
-    this.wss = new WebSocketServer({ server: this.httpServer });
+    this.wss = new WebSocketServer({
+      server: this.httpServer,
+      pingInterval: 25_000,
+      pingTimeout: 10_000,
+    });
 
     this.wss.on("connection", (ws) => {
       ws.send(

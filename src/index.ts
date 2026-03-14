@@ -107,12 +107,14 @@ async function main() {
   process.on("uncaughtException", (err) => {
     const mem = process.memoryUsage();
     console.error(`\n[FATAL] Uncaught exception (RSS ${(mem.rss / 1024 / 1024).toFixed(0)} MB):`, err);
-    process.exit(1);
+    console.error("[FATAL] Process will exit in 5s so run.sh can restart…");
+    setTimeout(() => process.exit(1), 5000);
   });
   process.on("unhandledRejection", (reason, _promise) => {
     const mem = process.memoryUsage();
     console.error(`\n[FATAL] Unhandled rejection (RSS ${(mem.rss / 1024 / 1024).toFixed(0)} MB):`, reason);
-    process.exit(1);
+    console.error("[FATAL] Process will exit in 5s so run.sh can restart…");
+    setTimeout(() => process.exit(1), 5000);
   });
 
   const config = loadConfig();
@@ -169,22 +171,32 @@ async function main() {
   });
   startVerificationWorker();
 
+  const sessionStart = Date.now();
+  const formatUptime = (ms: number) => {
+    const d = Math.floor(ms / 86400_000);
+    const h = Math.floor((ms % 86400_000) / 3600_000);
+    const m = Math.floor((ms % 3600_000) / 60_000);
+    return d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`;
+  };
+
   setInterval(() => {
     const mem = process.memoryUsage();
     const rss = (mem.rss / 1024 / 1024).toFixed(0);
     const heap = (mem.heapUsed / 1024 / 1024).toFixed(0);
-    console.log(`[keep-alive] Scraper running — RSS ${rss} MB, heap ${heap} MB`);
+    const uptime = formatUptime(Date.now() - sessionStart);
+    console.log(`[keep-alive] Uptime ${uptime} — RSS ${rss} MB, heap ${heap} MB`);
   }, 5 * 60 * 1000);
 
   const supabaseKeepAlive = async () => {
     try {
       const { getClient } = await import("./db.js");
       await getClient().from("9_Octoparse_Scrapes").select("id").limit(1).maybeSingle();
-    } catch {
-      // ignore
+    } catch (err) {
+      console.warn("[keep-alive] Supabase ping failed:", err instanceof Error ? err.message : err);
     }
   };
-  setInterval(supabaseKeepAlive, 5 * 60 * 1000);
+  supabaseKeepAlive();
+  setInterval(supabaseKeepAlive, 60 * 1000);
 
   process.on("SIGINT", async () => {
     console.log("\nShutting down...");
@@ -203,6 +215,7 @@ async function main() {
     dashboard.start();
 
     console.log("Dashboard ready. Press Start on either scraper to begin.");
+    console.log(`[keep-alive] Session started — tuned for 10-day runs (Supabase ping 1m, browser recycle 6h)`);
 
     await new Promise<void>(() => {});
   } catch (err) {
