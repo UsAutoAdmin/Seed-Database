@@ -2,15 +2,34 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseCredentials, type ScrapeTask } from "./config.js";
 
 let client: SupabaseClient | null = null;
+let consecutiveFailures = 0;
+const MAX_FAILURES_BEFORE_RECONNECT = 5;
 
 export function getClient(): SupabaseClient {
   if (!client) {
-    const { url, key } = getSupabaseCredentials();
-    client = createClient(url, key, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
+    buildClient();
   }
-  return client;
+  return client!;
+}
+
+function buildClient(): void {
+  const { url, key } = getSupabaseCredentials();
+  client = createClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  consecutiveFailures = 0;
+}
+
+export function markDbSuccess(): void {
+  consecutiveFailures = 0;
+}
+
+export function markDbFailure(): void {
+  consecutiveFailures++;
+  if (consecutiveFailures >= MAX_FAILURES_BEFORE_RECONNECT) {
+    console.warn(`[db] ${consecutiveFailures} consecutive failures — rebuilding Supabase client`);
+    buildClient();
+  }
 }
 
 // ─── Sold Scraper (table 9 → table 9) ────────────────────────────────────────
@@ -30,9 +49,11 @@ export async function claimSoldBatch(
   });
 
   if (error) {
+    markDbFailure();
     console.error(`[sold] claimSoldBatch error: ${error.message}`);
     return { tasks: [], flagged: 0 };
   }
+  markDbSuccess();
 
   const rows: Array<Record<string, unknown> & { id: string; sold_link: string }> = data ?? [];
 
@@ -81,6 +102,7 @@ export async function writeSoldCount(
   const payload: Record<string, unknown> = {
     sold: String(soldCount),
     sold_scraped: "true",
+    sold_lastscraped: new Date().toISOString(),
   };
   if (soldCount > 0 && active != null && active !== "") {
     const activeNum = parseFloat(active.replace(/,/g, ""));
@@ -94,8 +116,10 @@ export async function writeSoldCount(
     .eq("id", id);
 
   if (error) {
+    markDbFailure();
     throw new Error(`Failed to write sold count for ${id}: ${error.message}`);
   }
+  markDbSuccess();
 }
 
 /**
@@ -156,8 +180,10 @@ export async function updateSoldConfidence(
     .eq("id", id);
 
   if (error) {
+    markDbFailure();
     throw new Error(`Failed to update sold_confidence for ${id}: ${error.message}`);
   }
+  markDbSuccess();
 }
 
 // ─── Active Scraper (table 8 → table 9) ──────────────────────────────────────
@@ -167,13 +193,25 @@ export interface ActiveTask {
   link: string;
   status: string;
   retry_count: number;
+  rescrape?: boolean;
 }
 
-// Persists across all batches within a session to prevent cross-batch duplicates
-const activeSeenUrls = new Set<string>();
+// Persists across all batches within a session to prevent cross-batch duplicates.
+// Caps at 500k entries to prevent OOM; evicts oldest half when full.
+const ACTIVE_SEEN_MAX = 500_000;
+let activeSeenUrls = new Set<string>();
 
 export function resetActiveSeenUrls(): void {
   activeSeenUrls.clear();
+}
+
+function activeSeenGuard(): void {
+  if (activeSeenUrls.size >= ACTIVE_SEEN_MAX) {
+    const entries = [...activeSeenUrls];
+    const half = Math.floor(entries.length / 2);
+    activeSeenUrls = new Set(entries.slice(half));
+    console.log(`[activeSeenUrls] Evicted ${half} oldest entries (now ${activeSeenUrls.size})`);
+  }
 }
 
 /**
@@ -192,8 +230,10 @@ export async function fetchPendingActiveTasks(
   });
 
   if (error) {
+    markDbFailure();
     throw new Error(`Failed to fetch active tasks: ${error.message}`);
   }
+  markDbSuccess();
 
   const rows: Array<{ id: string; link: string }> = data ?? [];
 
@@ -206,6 +246,7 @@ export async function fetchPendingActiveTasks(
       flagged++;
       continue;
     }
+    activeSeenGuard();
     activeSeenUrls.add(key);
     if (unique.length < batchSize) {
       unique.push({
@@ -239,15 +280,111 @@ export async function writeActiveResult(
       active: String(activeCount),
       sold_link: soldLink,
       scraped_at: new Date().toISOString(),
+      active_lastscraped: new Date().toISOString(),
     },
     { onConflict: "original_url", ignoreDuplicates: true }
   );
 
   if (error) {
+    markDbFailure();
     throw new Error(
       `Failed to write active result for ${originalUrl}: ${error.message}`
     );
   }
+  markDbSuccess();
+}
+
+// ─── Re-scrape Queries ───────────────────────────────────────────────────────
+
+/**
+ * Fetch a batch of non-zero active rows for re-scraping, oldest-scraped first.
+ * Skips rows where active is '0' or null.
+ */
+export async function fetchRescrapeActiveBatch(
+  batchSize: number
+): Promise<ActiveTask[]> {
+  const db = getClient();
+
+  const { data, error } = await db
+    .from("9_Octoparse_Scrapes")
+    .select("id, original_url")
+    .not("active", "eq", "0")
+    .not("active", "is", null)
+    .not("original_url", "is", null)
+    .order("active_lastscraped", { ascending: true, nullsFirst: true })
+    .limit(batchSize);
+
+  if (error) {
+    markDbFailure();
+    throw new Error(`Failed to fetch active re-scrape batch: ${error.message}`);
+  }
+  markDbSuccess();
+
+  const rows = (data ?? []) as Array<{ id: string; original_url: string }>;
+  return rows.map((row) => ({
+    id: row.id,
+    link: row.original_url,
+    status: "pending",
+    retry_count: 0,
+    rescrape: true,
+  }));
+}
+
+/**
+ * Fetch a batch of non-zero sold rows for re-scraping, oldest-scraped first.
+ * Skips rows where sold is '0' or null.
+ */
+export async function fetchRescrapeSoldBatch(
+  batchSize: number
+): Promise<ScrapeTask[]> {
+  const db = getClient();
+
+  const { data, error } = await db
+    .from("9_Octoparse_Scrapes")
+    .select("id, sold_link, active")
+    .not("sold", "eq", "0")
+    .not("sold", "is", null)
+    .not("sold_link", "is", null)
+    .order("sold_lastscraped", { ascending: true, nullsFirst: true })
+    .limit(batchSize);
+
+  if (error) {
+    markDbFailure();
+    throw new Error(`Failed to fetch sold re-scrape batch: ${error.message}`);
+  }
+  markDbSuccess();
+
+  const rows = (data ?? []) as Array<{ id: string; sold_link: string; active?: string | null }>;
+  return rows.map((row) => ({
+    id: row.id,
+    sold_link: row.sold_link,
+    active: row.active != null && row.active !== "" ? row.active : undefined,
+    status: "pending" as const,
+    retry_count: 0,
+  }));
+}
+
+/**
+ * Update active count and timestamp for an existing row during re-scrape.
+ */
+export async function updateActiveRescrape(
+  id: string,
+  activeCount: number
+): Promise<void> {
+  const db = getClient();
+  const { error } = await db
+    .from("9_Octoparse_Scrapes")
+    .update({
+      active: String(activeCount),
+      active_lastscraped: new Date().toISOString(),
+    })
+    .eq("id", id);
+
+  if (error) {
+    markDbFailure();
+    throw new Error(`Failed to update active re-scrape for ${id}: ${error.message}`);
+  }
+  markDbSuccess();
 }
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
@@ -296,15 +433,23 @@ export function isBrokenUrl(url: string): boolean {
 
 /**
  * Tracks seen search queries across batches for cross-batch duplicate detection.
+ * Caps at MAX_SIZE to prevent OOM during multi-day runs; evicts oldest half when full.
  */
 export class SeenUrlTracker {
   private seen = new Set<string>();
+  private static readonly MAX_SIZE = 500_000;
 
   check(url: string): boolean {
     return this.seen.has(extractNkw(url));
   }
 
   add(url: string): void {
+    if (this.seen.size >= SeenUrlTracker.MAX_SIZE) {
+      const entries = [...this.seen];
+      const half = Math.floor(entries.length / 2);
+      this.seen = new Set(entries.slice(half));
+      console.log(`[SeenUrlTracker] Evicted ${half} oldest entries (was ${entries.length}, now ${this.seen.size})`);
+    }
     this.seen.add(extractNkw(url));
   }
 

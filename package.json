@@ -6,7 +6,9 @@
   "scripts": {
     "start": "tsx --max-old-space-size=4096 src/index.ts",
     "start:dry": "tsx --max-old-space-size=4096 src/index.ts --dry-run",
-    "run": "bash run.sh"
+    "run": "bash run.sh",
+    "postinstall": "npx playwright install chromium",
+    "install:all": "npm install && npx playwright install chromium"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.89.0",

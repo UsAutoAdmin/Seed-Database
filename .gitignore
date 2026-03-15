@@ -5,3 +5,5 @@ dist/
 .env
 *.tsbuildinfo
 .cursor/
+logs/
+scraper.pid

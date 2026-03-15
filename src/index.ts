@@ -1,5 +1,11 @@
 import { loadConfig, getOpenAIApiKey, getAnthropicApiKey } from "./config.js";
-import { claimSoldBatch, fetchPendingActiveTasks, resetActiveSeenUrls } from "./db.js";
+import {
+  claimSoldBatch,
+  fetchPendingActiveTasks,
+  resetActiveSeenUrls,
+  fetchRescrapeActiveBatch,
+  fetchRescrapeSoldBatch,
+} from "./db.js";
 import { WorkerPool, type TaskEvent, type ScraperMode } from "./worker-pool.js";
 import { Dashboard } from "./dashboard.js";
 import {
@@ -10,21 +16,27 @@ import {
 } from "./verification.js";
 
 const runningLoops: Record<ScraperMode, boolean> = { sold: false, active: false };
+const RESCRAPE_PAUSE_MS = 5 * 60_000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 async function runSoldLoop(pool: WorkerPool, batchSize: number) {
   if (runningLoops.sold) return;
   runningLoops.sold = true;
 
   try {
+    // Phase 1: Initial scrape — claim pending rows (sold_scraped IS NULL)
     let batchNum = 0;
     while (true) {
       batchNum++;
-      console.log(`\n[sold] ── Batch ${batchNum} ── Claiming ${batchSize} tasks...`);
+      console.log(`\n[sold] ── Phase 1 · Batch ${batchNum} ── Claiming ${batchSize} tasks...`);
 
       const { tasks, flagged } = await claimSoldBatch(batchSize);
       if (flagged > 0) console.log(`[sold] Flagged ${flagged} duplicates`);
       if (tasks.length === 0) {
-        console.log("[sold] No more pending tasks. Done!");
+        console.log("[sold] Phase 1 complete — no more pending tasks.");
         break;
       }
 
@@ -35,8 +47,48 @@ async function runSoldLoop(pool: WorkerPool, batchSize: number) {
       const stats = pool.getStats();
       if (stats.status === "stopped" || stats.status === "stopping") {
         console.log("[sold] Stopped by user.");
-        break;
+        return;
       }
+    }
+
+    // Phase 2: Re-scrape loop — non-zero sold rows, oldest-first, forever
+    console.log("[sold] Entering re-scrape mode (non-zero sold, oldest first)...");
+    pool.clearSeenUrls();
+    let rescrapePass = 0;
+
+    while (true) {
+      rescrapePass++;
+      let rescrapeBatch = 0;
+      let processedThisPass = 0;
+
+      while (true) {
+        rescrapeBatch++;
+        console.log(`\n[sold] ── Re-scrape pass ${rescrapePass} · Batch ${rescrapeBatch} ── Fetching ${batchSize} tasks...`);
+
+        const tasks = await fetchRescrapeSoldBatch(batchSize);
+        if (tasks.length === 0) {
+          console.log(`[sold] Re-scrape pass ${rescrapePass} complete (${processedThisPass} tasks processed).`);
+          break;
+        }
+
+        console.log(`[sold] Re-scrape: ${tasks.length} tasks`);
+        pool.loadTasks(tasks);
+        await pool.run();
+        processedThisPass += tasks.length;
+
+        const stats = pool.getStats();
+        if (stats.status === "stopped" || stats.status === "stopping") {
+          console.log("[sold] Stopped by user.");
+          return;
+        }
+      }
+
+      pool.clearSeenUrls();
+      console.log(`[sold] Waiting ${RESCRAPE_PAUSE_MS / 1000}s before next re-scrape pass...`);
+      await sleep(RESCRAPE_PAUSE_MS);
+
+      const stats = pool.getStats();
+      if (stats.status === "stopped" || stats.status === "stopping") return;
     }
   } finally {
     runningLoops.sold = false;
@@ -49,15 +101,16 @@ async function runActiveLoop(pool: WorkerPool, batchSize: number) {
   resetActiveSeenUrls();
 
   try {
+    // Phase 1: Initial scrape — new links from table 8 not yet in table 9
     let batchNum = 0;
     while (true) {
       batchNum++;
-      console.log(`\n[active] ── Batch ${batchNum} ── Fetching ${batchSize} tasks...`);
+      console.log(`\n[active] ── Phase 1 · Batch ${batchNum} ── Fetching ${batchSize} tasks...`);
 
       const { tasks, flagged } = await fetchPendingActiveTasks(batchSize);
       if (flagged > 0) console.log(`[active] Flagged ${flagged} duplicates`);
       if (tasks.length === 0) {
-        console.log("[active] No more pending tasks. Done!");
+        console.log("[active] Phase 1 complete — no more pending tasks.");
         break;
       }
 
@@ -68,8 +121,48 @@ async function runActiveLoop(pool: WorkerPool, batchSize: number) {
       const stats = pool.getStats();
       if (stats.status === "stopped" || stats.status === "stopping") {
         console.log("[active] Stopped by user.");
-        break;
+        return;
       }
+    }
+
+    // Phase 2: Re-scrape loop — non-zero active rows, oldest-first, forever
+    console.log("[active] Entering re-scrape mode (non-zero active, oldest first)...");
+    pool.clearSeenUrls();
+    let rescrapePass = 0;
+
+    while (true) {
+      rescrapePass++;
+      let rescrapeBatch = 0;
+      let processedThisPass = 0;
+
+      while (true) {
+        rescrapeBatch++;
+        console.log(`\n[active] ── Re-scrape pass ${rescrapePass} · Batch ${rescrapeBatch} ── Fetching ${batchSize} tasks...`);
+
+        const tasks = await fetchRescrapeActiveBatch(batchSize);
+        if (tasks.length === 0) {
+          console.log(`[active] Re-scrape pass ${rescrapePass} complete (${processedThisPass} tasks processed).`);
+          break;
+        }
+
+        console.log(`[active] Re-scrape: ${tasks.length} tasks`);
+        pool.loadTasks(tasks);
+        await pool.run();
+        processedThisPass += tasks.length;
+
+        const stats = pool.getStats();
+        if (stats.status === "stopped" || stats.status === "stopping") {
+          console.log("[active] Stopped by user.");
+          return;
+        }
+      }
+
+      pool.clearSeenUrls();
+      console.log(`[active] Waiting ${RESCRAPE_PAUSE_MS / 1000}s before next re-scrape pass...`);
+      await sleep(RESCRAPE_PAUSE_MS);
+
+      const stats = pool.getStats();
+      if (stats.status === "stopped" || stats.status === "stopping") return;
     }
   } finally {
     runningLoops.active = false;
@@ -198,8 +291,8 @@ async function main() {
   supabaseKeepAlive();
   setInterval(supabaseKeepAlive, 60 * 1000);
 
-  process.on("SIGINT", async () => {
-    console.log("\nShutting down...");
+  const gracefulShutdown = async (signal: string) => {
+    console.log(`\n[${signal}] Shutting down gracefully...`);
     stopVerificationWorker();
     soldPool.stop();
     activePool.stop();
@@ -207,7 +300,10 @@ async function main() {
     await activePool.shutdown();
     await dashboard.shutdown();
     process.exit(0);
-  });
+  };
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  process.on("SIGHUP", () => gracefulShutdown("SIGHUP"));
 
   try {
     await soldPool.initialize();

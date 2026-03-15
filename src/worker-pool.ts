@@ -7,6 +7,7 @@ import {
   writeSoldCount,
   releaseSoldRow,
   writeActiveResult,
+  updateActiveRescrape,
   getActiveForSoldRow,
   isBrokenUrl,
   SeenUrlTracker,
@@ -71,6 +72,8 @@ export class WorkerPool extends EventEmitter {
   private _sessionStartTime = Date.now();
   private _tasksSinceBrowserRecycle = 0;
   private _browserRecycleThreshold = 2000;
+  private _browserRecycleIntervalMs = 6 * 60 * 60 * 1000; // 6 hours
+  private _lastBrowserRecycleTime = Date.now();
   private _browserDisconnected = false;
   private stats: PoolStats = {
     total: 0,
@@ -124,6 +127,7 @@ export class WorkerPool extends EventEmitter {
     } catch {}
     await this._launchBrowser();
     this._tasksSinceBrowserRecycle = 0;
+    this._lastBrowserRecycleTime = Date.now();
     console.log(`[${this.mode}] Browser recycled.`);
   }
 
@@ -157,7 +161,9 @@ export class WorkerPool extends EventEmitter {
       return this.run();
     }
 
-    if (this._tasksSinceBrowserRecycle >= this._browserRecycleThreshold && !this._stopping) {
+    const needsTaskRecycle = this._tasksSinceBrowserRecycle >= this._browserRecycleThreshold;
+    const needsTimeRecycle = (Date.now() - this._lastBrowserRecycleTime) >= this._browserRecycleIntervalMs;
+    if ((needsTaskRecycle || needsTimeRecycle) && !this._stopping) {
       await this.recycleBrowser();
     }
 
@@ -236,6 +242,10 @@ export class WorkerPool extends EventEmitter {
       queueRemaining: 0,
     };
     this.emit("status", this.getStats());
+  }
+
+  clearSeenUrls(): void {
+    this.seenUrls = new SeenUrlTracker();
   }
 
   private async waitIfPaused(): Promise<void> {
@@ -455,7 +465,11 @@ export class WorkerPool extends EventEmitter {
 
       if (count !== null) {
         if (!this.config.dryRun) {
-          await writeActiveResult(task.link, count);
+          if (task.rescrape) {
+            await updateActiveRescrape(task.id, count);
+          } else {
+            await writeActiveResult(task.link, count);
+          }
         }
         this.stats.completed++;
         this.stats.queueRemaining = this.queue.length;
