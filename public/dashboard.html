@@ -329,6 +329,12 @@
         </h2>
         <div class="controls">
           <div class="worker-control">
+            <label>Browsers</label>
+            <button onclick="adjustBrowsers('sold', -1)">-</button>
+            <span class="wc-value" id="sold_bcValue">2</span>
+            <button onclick="adjustBrowsers('sold', 1)">+</button>
+          </div>
+          <div class="worker-control">
             <label>Workers</label>
             <button onclick="adjustWorkers('sold', -1)">-</button>
             <span class="wc-value" id="sold_wcValue">4</span>
@@ -372,6 +378,12 @@
           </span>
         </h2>
         <div class="controls">
+          <div class="worker-control">
+            <label>Browsers</label>
+            <button onclick="adjustBrowsers('active', -1)">-</button>
+            <span class="wc-value" id="active_bcValue">2</span>
+            <button onclick="adjustBrowsers('active', 1)">+</button>
+          </div>
           <div class="worker-control">
             <label>Workers</label>
             <button onclick="adjustWorkers('active', -1)">-</button>
@@ -461,6 +473,14 @@
       sendCmd(mode, 'setWorkers', next);
     }
 
+    function adjustBrowsers(mode, delta) {
+      const el = document.getElementById(mode + '_bcValue');
+      const current = parseInt(el.textContent, 10) || 1;
+      const next = Math.max(1, Math.min(current + delta, 16));
+      el.textContent = next;
+      sendCmd(mode, 'setBrowsers', next);
+    }
+
     function applySnapshot(mode, snap) {
       updateStats(mode, snap);
       if (snap.recentTasks) {
@@ -486,6 +506,7 @@
       document.getElementById(p + 'workers').textContent = s.activeWorkers;
       document.getElementById(p + 'workersSub').textContent = `target: ${s.targetWorkers ?? s.activeWorkers}`;
       document.getElementById(p + 'wcValue').textContent = s.targetWorkers ?? s.activeWorkers;
+      if (s.targetBrowsers != null) document.getElementById(p + 'bcValue').textContent = s.targetBrowsers;
       document.getElementById(p + 'elapsed').textContent = s.elapsed;
 
       document.getElementById(p + 'progLabel').textContent = `${processed.toLocaleString()} / ${s.total.toLocaleString()}`;

@@ -184,6 +184,11 @@ export class Dashboard {
           state.pool.setWorkers(msg.value);
         }
         break;
+      case "setBrowsers":
+        if (typeof msg.value === "number") {
+          state.pool.setBrowsers(msg.value);
+        }
+        break;
       case "start":
         if (state.onStart) {
           state.pool.reset();

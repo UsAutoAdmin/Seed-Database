@@ -25,6 +25,8 @@ export interface PoolStats {
   status: "idle" | "running" | "paused" | "stopping" | "stopped";
   activeWorkers: number;
   targetWorkers: number;
+  activeBrowsers: number;
+  targetBrowsers: number;
   queueRemaining: number;
 }
 
@@ -59,7 +61,9 @@ function pickUserAgent(): string {
 }
 
 export class WorkerPool extends EventEmitter {
-  private browser: Browser | null = null;
+  private browsers: Browser[] = [];
+  private _targetBrowsersCount: number;
+  private _browserDisconnected = false;
   private queue: Array<ScrapeTask | ActiveTask> = [];
   private _paused = false;
   private _stopping = false;
@@ -74,7 +78,6 @@ export class WorkerPool extends EventEmitter {
   private _browserRecycleThreshold = 2000;
   private _browserRecycleIntervalMs = 6 * 60 * 60 * 1000; // 6 hours
   private _lastBrowserRecycleTime = Date.now();
-  private _browserDisconnected = false;
   private stats: PoolStats = {
     total: 0,
     completed: 0,
@@ -84,6 +87,8 @@ export class WorkerPool extends EventEmitter {
     status: "idle",
     activeWorkers: 0,
     targetWorkers: 0,
+    activeBrowsers: 0,
+    targetBrowsers: 0,
     queueRemaining: 0,
   };
 
@@ -97,38 +102,91 @@ export class WorkerPool extends EventEmitter {
     super();
     this.mode = mode;
     this._targetWorkers = config.maxWorkers;
+    this._targetBrowsersCount = Math.max(1, config.browsersCount);
     this.stats.targetWorkers = config.maxWorkers;
+    this.stats.targetBrowsers = this._targetBrowsersCount;
   }
 
   async initialize(): Promise<void> {
-    await this._launchBrowser();
+    await this._launchBrowsers();
     this.stats.status = "idle";
     this.emit("status", this.getStats());
   }
 
-  private async _launchBrowser(): Promise<void> {
+  private async _launchBrowsers(): Promise<void> {
     this._browserDisconnected = false;
+    this.browsers = [];
+
     if (this.sharedBrowser) {
-      this.browser = this.sharedBrowser;
-    } else {
-      this.browser = await chromium.launch({ headless: this.config.headless });
+      this.browsers.push(this.sharedBrowser);
+      this.stats.activeBrowsers = 1;
+      this.stats.targetBrowsers = 1;
+      return;
     }
-    this.browser!.on("disconnected", () => {
-      console.error(`[${this.mode}] Browser disconnected unexpectedly!`);
+
+    const count = this._targetBrowsersCount;
+    for (let i = 0; i < count; i++) {
+      await this._launchOneBrowser(i);
+    }
+
+    if (count > 1) {
+      console.log(`[${this.mode}] Launched ${count} browser instances (${this._targetWorkers} workers distributed round-robin)`);
+    }
+
+    this.stats.activeBrowsers = this.browsers.length;
+    this.emit("status", this.getStats());
+  }
+
+  private async _launchOneBrowser(idx: number): Promise<Browser> {
+    const browser = await chromium.launch({ headless: this.config.headless });
+    browser.on("disconnected", () => {
+      console.error(`[${this.mode}] Browser #${idx} disconnected unexpectedly!`);
       this._browserDisconnected = true;
     });
+    this.browsers.push(browser);
+    return browser;
+  }
+
+  private _getBrowserForWorker(workerId: number): Browser {
+    const count = Math.min(this.browsers.length, this._targetBrowsersCount);
+    return this.browsers[workerId % count];
+  }
+
+  async setBrowsers(count: number): Promise<void> {
+    if (this.sharedBrowser) return;
+    const clamped = Math.max(1, Math.min(count, 16));
+    const previous = this._targetBrowsersCount;
+    this._targetBrowsersCount = clamped;
+    this.stats.targetBrowsers = clamped;
+    console.log(`[${this.mode}] Browsers: ${previous} → ${clamped}`);
+
+    if (clamped > this.browsers.length) {
+      // Launch additional browsers immediately
+      const toAdd = clamped - this.browsers.length;
+      for (let i = 0; i < toAdd; i++) {
+        await this._launchOneBrowser(this.browsers.length);
+      }
+      console.log(`[${this.mode}] Launched ${toAdd} additional browser(s) — now ${this.browsers.length} active`);
+    }
+    // Decreasing: excess browsers stay alive until next recycle to avoid
+    // pulling the rug on workers mid-page. _getBrowserForWorker uses
+    // min(actual, target) so new workers won't be assigned to excess browsers.
+
+    this.stats.activeBrowsers = this.browsers.length;
+    this.emit("status", this.getStats());
   }
 
   async recycleBrowser(): Promise<void> {
     if (this.sharedBrowser) return;
-    console.log(`[${this.mode}] Recycling browser (${this._tasksSinceBrowserRecycle} tasks since last recycle)…`);
-    try {
-      if (this.browser) await this.browser.close().catch(() => {});
-    } catch {}
-    await this._launchBrowser();
+    console.log(`[${this.mode}] Recycling ${this.browsers.length} browser(s) → ${this._targetBrowsersCount} (${this._tasksSinceBrowserRecycle} tasks since last recycle)…`);
+    for (const b of this.browsers) {
+      try { await b.close(); } catch {}
+    }
+    this.browsers = [];
+    await this._launchBrowsers();
     this._tasksSinceBrowserRecycle = 0;
     this._lastBrowserRecycleTime = Date.now();
-    console.log(`[${this.mode}] Browser recycled.`);
+    console.log(`[${this.mode}] Browser(s) recycled — ${this.browsers.length} active.`);
   }
 
   loadTasks(tasks: Array<ScrapeTask | ActiveTask>): void {
@@ -139,7 +197,7 @@ export class WorkerPool extends EventEmitter {
   }
 
   async run(): Promise<PoolStats> {
-    if (!this.browser) throw new Error("Browser not initialized");
+    if (this.browsers.length === 0) throw new Error("Browser not initialized");
     if (this.queue.length === 0) return this.getStats();
 
     this._stopping = false;
@@ -156,7 +214,7 @@ export class WorkerPool extends EventEmitter {
     await Promise.all(this._runningWorkerPromises);
 
     if (this._browserDisconnected && this.queue.length > 0 && !this._stopping) {
-      console.log(`[${this.mode}] Browser crashed mid-batch. Recycling and resuming ${this.queue.length} remaining tasks…`);
+      console.log(`[${this.mode}] A browser crashed mid-batch. Recycling all browsers and resuming ${this.queue.length} remaining tasks…`);
       await this.recycleBrowser();
       return this.run();
     }
@@ -239,6 +297,8 @@ export class WorkerPool extends EventEmitter {
       status: "idle",
       activeWorkers: 0,
       targetWorkers: this._targetWorkers,
+      activeBrowsers: this.browsers.length,
+      targetBrowsers: this._targetBrowsersCount,
       queueRemaining: 0,
     };
     this.emit("status", this.getStats());
@@ -256,9 +316,10 @@ export class WorkerPool extends EventEmitter {
   }
 
   private async runWorker(workerId: number): Promise<void> {
-    if (!this.browser) return;
+    if (this.browsers.length === 0) return;
 
-    let context = await this.browser.newContext({
+    const browser = this._getBrowserForWorker(workerId);
+    let context = await browser.newContext({
       userAgent: pickUserAgent(),
       viewport: { width: 1920, height: 1080 },
       locale: "en-US",
@@ -351,7 +412,17 @@ export class WorkerPool extends EventEmitter {
           if (fetched != null) active = fetched;
         }
         if (!this.config.dryRun) {
-          await writeSoldCount(task.id, count, active);
+          try {
+            await writeSoldCount(task.id, count, active);
+          } catch (dbErr) {
+            const msg = dbErr instanceof Error ? dbErr.message : String(dbErr);
+            console.warn(`[${this.mode}] [W${workerId}] DB write failed (skipping task): ${msg}`);
+            this.stats.failed++;
+            this.stats.queueRemaining = this.queue.length;
+            this.emit("task:failed", { workerId, taskId: task.id, url: task.sold_link, count: null, error: `DB write failed: ${msg}`, durationMs: Date.now() - taskStart } as TaskEvent);
+            this.emit("status", this.getStats());
+            return;
+          }
         }
         const threshold = this.config.soldVerificationThreshold ?? 0;
         const activeNum =
@@ -411,7 +482,7 @@ export class WorkerPool extends EventEmitter {
         this.stats.failed++;
         this.stats.queueRemaining = this.queue.length;
         if (!this.config.dryRun) {
-          await releaseSoldRow(task.id);
+          try { await releaseSoldRow(task.id); } catch {}
         }
         this.emit("task:failed", {
           workerId,
@@ -465,10 +536,20 @@ export class WorkerPool extends EventEmitter {
 
       if (count !== null) {
         if (!this.config.dryRun) {
-          if (task.rescrape) {
-            await updateActiveRescrape(task.id, count);
-          } else {
-            await writeActiveResult(task.link, count);
+          try {
+            if (task.rescrape) {
+              await updateActiveRescrape(task.id, count);
+            } else {
+              await writeActiveResult(task.link, count);
+            }
+          } catch (dbErr) {
+            const msg = dbErr instanceof Error ? dbErr.message : String(dbErr);
+            console.warn(`[${this.mode}] [W${workerId}] DB write failed (skipping task): ${msg}`);
+            this.stats.failed++;
+            this.stats.queueRemaining = this.queue.length;
+            this.emit("task:failed", { workerId, taskId: task.id, url: task.link, count: null, error: `DB write failed: ${msg}`, durationMs: Date.now() - taskStart } as TaskEvent);
+            this.emit("status", this.getStats());
+            return;
           }
         }
         this.stats.completed++;
@@ -509,9 +590,12 @@ export class WorkerPool extends EventEmitter {
     this._stopping = true;
     this.stats.status = "stopped";
     if (this._paused) this.resume();
-    if (this.browser && !this.sharedBrowser) {
-      await this.browser.close();
-      this.browser = null;
+    if (!this.sharedBrowser) {
+      for (const b of this.browsers) {
+        try { await b.close(); } catch {}
+      }
+      this.browsers = [];
+      this.stats.activeBrowsers = 0;
     }
     this.emit("status", this.getStats());
   }
@@ -524,6 +608,8 @@ export class WorkerPool extends EventEmitter {
 
     return {
       ...this.stats,
+      activeBrowsers: this.browsers.length,
+      targetBrowsers: this._targetBrowsersCount,
       queueRemaining: this.queue.length,
       elapsed: formatDuration(elapsed),
       rate: `${rateNum.toFixed(1)} pages/min`,

@@ -16,6 +16,8 @@ export interface ScrapeTask {
 
 export interface ScraperConfig {
   maxWorkers: number;
+  /** Number of independent Chromium browser processes to launch. Workers are distributed round-robin. Default 1. */
+  browsersCount: number;
   batchSize: number;
   requestDelayMs: [number, number]; // [min, max] random delay between requests
   pageTimeoutMs: number;
@@ -38,6 +40,10 @@ function parseArgs(): Partial<ScraperConfig> {
     switch (arg) {
       case "--workers":
         parsed.maxWorkers = parseInt(next, 10);
+        i++;
+        break;
+      case "--browsers":
+        parsed.browsersCount = parseInt(next, 10);
         i++;
         break;
       case "--batch-size":
@@ -73,6 +79,7 @@ export function loadConfig(): ScraperConfig {
 
   return {
     maxWorkers: overrides.maxWorkers ?? 4,
+    browsersCount: overrides.browsersCount ?? 1,
     batchSize: overrides.batchSize ?? 500,
     requestDelayMs: overrides.requestDelayMs ?? [800, 2500],
     pageTimeoutMs: overrides.pageTimeoutMs ?? 30_000,

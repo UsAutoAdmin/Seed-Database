@@ -218,6 +218,7 @@ async function main() {
   console.log();
   console.log("Config:", {
     workers: config.maxWorkers,
+    browsers: config.browsersCount,
     batchSize: config.batchSize,
     timeout: `${config.pageTimeoutMs / 1000}s`,
     retries: config.maxRetries,
